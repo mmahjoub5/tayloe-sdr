@@ -1,0 +1,13 @@
+[project]
+name = "radiolib"
+version = "0.1.0"
+description = "Host-side library for the Tayloe receiver board"
+requires-python = ">=3.9"
+dependencies = ["numpy", "pyserial", "scipy"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["radiolib"]

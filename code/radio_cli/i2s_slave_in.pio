@@ -1,0 +1,47 @@
+; I2S slave receiver for non-adjacent pins.
+;
+; The stock arduino-pico slave program (and the malacalypse one) require
+; DIN, DIN+1, DIN+2 to be consecutive, because they read all three through the
+; IN pin group. This board has DIN on GPIO0 with BCK/LRCK on GPIO28/29, so the
+; clocks are addressed by `wait N gpio X` instead, which takes an absolute GPIO
+; index and does not care where the IN base sits.
+;
+; Format: I2S (FMT=0), MSB first, one BCLK of delay after each LRCK edge.
+; LRCK low = left. At 64fs each half-frame is 32 BCLKs: one delay bit, then 24
+; data bits, then 7 of padding. So exactly 24 bits are sampled and the padding
+; is discarded by waiting for the next LRCK edge -- sampling 32 would run a bit
+; past the half-frame and steal the next channel's delay bit.
+;
+; Autopush fires at 24, and the ISR shifts left, so each word arrives with the
+; sample right-aligned in bits 23:0.
+;
+; The `wait 0` / `wait 1` pairs turn PIO's level-triggered waits into edge
+; detection. At 48 kHz a BCLK period is ~325 ns while this loop takes ~32 ns
+; per bit at 125 MHz, so it always re-arms before the next edge.
+
+.program i2s_slave_in
+
+.wrap_target
+    ; ---- left channel: falling edge of LRCK ----
+    wait 1 gpio 29
+    wait 0 gpio 29
+    wait 0 gpio 28
+    wait 1 gpio 28              ; consume the I2S one-bit delay
+    set x, 23
+lbit:
+    wait 0 gpio 28
+    wait 1 gpio 28
+    in pins, 1                  ; sample DIN on the rising edge
+    jmp x--, lbit
+
+    ; ---- right channel: rising edge of LRCK ----
+    wait 1 gpio 29
+    wait 0 gpio 28
+    wait 1 gpio 28              ; consume the I2S one-bit delay
+    set x, 23
+rbit:
+    wait 0 gpio 28
+    wait 1 gpio 28
+    in pins, 1
+    jmp x--, rbit
+.wrap
