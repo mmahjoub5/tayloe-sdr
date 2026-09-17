@@ -197,7 +197,6 @@ class amradio(gr.top_block, Qt.QWidget):
                 6.76))
         self.freq_xlating_fir_filter_xxx_0 = filter.freq_xlating_fir_filter_ccc(1, firdes.low_pass(1, 24000, 5000, 1000), 3000, samp_rate)
         self.epy_block_0 = epy_block_0.blk(freq=frequency)
-        self.blocks_multiply_const_vxx_0_0 = blocks.multiply_const_cc(volume)
         self.blocks_multiply_const_vxx_0 = blocks.multiply_const_ff(volume)
         self.audio_sink_0 = audio.sink(audio_sample, '', True)
         self.analog_am_demod_cf_0 = analog.am_demod_cf(
@@ -206,23 +205,20 @@ class amradio(gr.top_block, Qt.QWidget):
         	audio_pass=5000,
         	audio_stop=5500,
         )
-        self.analog_agc2_xx_0 = analog.agc2_cc((1e-3), (1e-5), 1.0, 1.0, 65536)
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.analog_agc2_xx_0, 0), (self.analog_am_demod_cf_0, 0))
         self.connect((self.analog_am_demod_cf_0, 0), (self.high_pass_filter_0, 0))
         self.connect((self.blocks_multiply_const_vxx_0, 0), (self.audio_sink_0, 0))
-        self.connect((self.blocks_multiply_const_vxx_0_0, 0), (self.epy_block_0, 0))
         self.connect((self.epy_block_0, 0), (self.freq_xlating_fir_filter_xxx_0, 0))
         self.connect((self.epy_block_0, 0), (self.qtgui_freq_sink_x_0, 0))
         self.connect((self.epy_block_0, 0), (self.qtgui_time_sink_x_0, 0))
-        self.connect((self.freq_xlating_fir_filter_xxx_0, 0), (self.analog_agc2_xx_0, 0))
+        self.connect((self.freq_xlating_fir_filter_xxx_0, 0), (self.analog_am_demod_cf_0, 0))
         self.connect((self.high_pass_filter_0, 0), (self.rational_resampler_xxx_0, 0))
         self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_multiply_const_vxx_0, 0))
-        self.connect((self.zeromq_sub_source_0, 0), (self.blocks_multiply_const_vxx_0_0, 0))
+        self.connect((self.zeromq_sub_source_0, 0), (self.epy_block_0, 0))
 
 
     def closeEvent(self, event):
@@ -239,7 +235,6 @@ class amradio(gr.top_block, Qt.QWidget):
     def set_volume(self, volume):
         self.volume = volume
         self.blocks_multiply_const_vxx_0.set_k(self.volume)
-        self.blocks_multiply_const_vxx_0_0.set_k(self.volume)
 
     def get_samp_rate(self):
         return self.samp_rate

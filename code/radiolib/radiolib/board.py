@@ -9,6 +9,17 @@ DEFAULT_PORT = "/dev/cu.usbmodem1101"
 
 TAYLOE_DIV = 4              # the detector divides the LO by four for quadrature
 OFFSET_HZ = 3000.0          # park carriers here, clear of the board's DC offset
+#
+# Why you might want this larger: at 3 kHz a 5 kHz-wide channel spans -2 to
+# +8 kHz, so DC sits *inside* it -- amplifier offset, LO self-mixing and 1/f
+# noise all land in the passband where no channel filter can remove them. The
+# I channel's DC offset on this board is about a quarter of peak amplitude.
+# A larger offset moves the channel clear of DC and puts the I/Q image far
+# enough away to be filtered.
+#
+# The ceiling is the streamed bandwidth: offset + bw/2 must stay inside
+# rate/2. At ADC_DECIM 2 (24 kHz) that caps the offset near 9 kHz; reaching
+# 15 kHz needs ADC_DECIM 1.
 FULL_SCALE = 1 << 23        # 24-bit samples -> roughly +/-1.0
 MAX_CAPTURE = 8192          # ADC_MAX_CAPTURE in audio_adc.h
 STREAM_CHUNK_S = 120        # the firmware's per-stream limit
@@ -39,9 +50,13 @@ def to_complex(raw, swap=True, scale=FULL_SCALE):
 class RadioBoard:
     """One serial connection to the board, plus the protocol on top of it."""
 
-    def __init__(self, port=DEFAULT_PORT, baud=115200, timeout=1.0, swap=True):
+    def __init__(self, port=DEFAULT_PORT, baud=115200, timeout=1.0, swap=True,
+                 offset=OFFSET_HZ):
         self.ser = serial.Serial(port, baud, timeout=timeout)
         self.swap = swap
+        # Kept on the instance so tuning and demodulation cannot disagree about
+        # where the carrier was placed.
+        self.offset = float(offset)
         self._pending_tune = None
         self._tuned_to = None
         time.sleep(0.3)
@@ -88,12 +103,14 @@ class RadioBoard:
         self._pending_tune = float(hz)
         return True
 
-    def tune(self, hz, offset=OFFSET_HZ):
+    def tune(self, hz, offset=None):
         """Place the wanted carrier at +offset rather than at DC.
 
         The board's DC offset would otherwise sit exactly where the carrier is.
-        Returns the LO frequency actually requested.
+        Uses the board's configured offset unless one is given here. Returns
+        the LO frequency actually requested.
         """
+        offset = self.offset if offset is None else float(offset)
         lo = (hz - offset) * TAYLOE_DIV
         self.command(f"clk 1 {int(lo)}", wait=0.15)
         self._tuned_to = float(hz)
@@ -142,6 +159,10 @@ class RadioBoard:
         self.ser.write(b"\n")
         time.sleep(0.05)
         self.ser.reset_input_buffer()
+
+    def offset_fits(self, rate, bw=5000.0):
+        """Whether the configured offset leaves the channel inside the band."""
+        return self.offset + bw / 2 < 0.95 * rate / 2
 
     def stream(self, seconds=None, block_frames=1024):
         """Yield (iq_block, rate) until `seconds` elapse, or forever if None.

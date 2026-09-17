@@ -120,27 +120,6 @@ blocks:
     coordinate: [376, 28.0]
     rotation: 0
     state: enabled
-- name: analog_agc2_xx_0
-  id: analog_agc2_xx
-  parameters:
-    affinity: ''
-    alias: ''
-    attack_rate: 1e-3
-    comment: ''
-    decay_rate: 1e-5
-    gain: '1.0'
-    max_gain: '65536'
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    reference: '1.0'
-    type: complex
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [552, 368.0]
-    rotation: 0
-    state: enabled
 - name: analog_am_demod_cf_0
   id: analog_am_demod_cf
   parameters:
@@ -193,24 +172,6 @@ blocks:
     bus_source: false
     bus_structure: null
     coordinate: [1200, 292.0]
-    rotation: 0
-    state: enabled
-- name: blocks_multiply_const_vxx_0_0
-  id: blocks_multiply_const_vxx
-  parameters:
-    affinity: ''
-    alias: ''
-    comment: ''
-    const: volume
-    maxoutbuf: '0'
-    minoutbuf: '0'
-    type: complex
-    vlen: '1'
-  states:
-    bus_sink: false
-    bus_source: false
-    bus_structure: null
-    coordinate: [144, 372.0]
     rotation: 0
     state: enabled
 - name: epy_block_0
@@ -539,17 +500,15 @@ blocks:
     state: enabled
 
 connections:
-- [analog_agc2_xx_0, '0', analog_am_demod_cf_0, '0']
 - [analog_am_demod_cf_0, '0', high_pass_filter_0, '0']
 - [blocks_multiply_const_vxx_0, '0', audio_sink_0, '0']
-- [blocks_multiply_const_vxx_0_0, '0', epy_block_0, '0']
 - [epy_block_0, '0', freq_xlating_fir_filter_xxx_0, '0']
 - [epy_block_0, '0', qtgui_freq_sink_x_0, '0']
 - [epy_block_0, '0', qtgui_time_sink_x_0, '0']
-- [freq_xlating_fir_filter_xxx_0, '0', analog_agc2_xx_0, '0']
+- [freq_xlating_fir_filter_xxx_0, '0', analog_am_demod_cf_0, '0']
 - [high_pass_filter_0, '0', rational_resampler_xxx_0, '0']
 - [rational_resampler_xxx_0, '0', blocks_multiply_const_vxx_0, '0']
-- [zeromq_sub_source_0, '0', blocks_multiply_const_vxx_0_0, '0']
+- [zeromq_sub_source_0, '0', epy_block_0, '0']
 
 metadata:
   file_format: 1

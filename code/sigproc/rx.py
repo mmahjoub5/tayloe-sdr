@@ -30,18 +30,18 @@ AM_STEP = 10e3              # Americas channel spacing; Europe uses 9 kHz
 def demod_opts(args):
     """Filter settings for demod(), from the command line."""
     if args.narrow:
-        return dict(bw=2500, audio_band=(300, 2400))
-    return dict(bw=args.bw)
+        return dict(bw=2500, audio_band=(300, 2400), offset=args.offset)
+    return dict(bw=args.bw, offset=args.offset)
 
 
-def report_carrier(iq, rate):
-    cnr, side = carrier_power(iq, rate)
+def report_carrier(iq, rate, offset=OFFSET_HZ):
+    cnr, side = carrier_power(iq, rate, offset)
     print(f"carrier-to-noise: {cnr:+.1f} dB at "
-          f"{'+' if side > 0 else '-'}{OFFSET_HZ:.0f} Hz")
+          f"{'+' if side > 0 else '-'}{offset:.0f} Hz")
     return side
 
 
-def scan(board, frames, start, stop, step):
+def scan(board, frames, start, stop, step, offset=OFFSET_HZ):
     results = []
     freq = start
     while freq <= stop:
@@ -53,7 +53,7 @@ def scan(board, frames, start, stop, step):
             freq += step
             continue
 
-        cnr, side = carrier_power(iq, rate)
+        cnr, side = carrier_power(iq, rate, offset)
         results.append((freq, cnr))
         mark = "  <--" if cnr > 6 else ""
         print(f"  {freq/1e3:7.0f} kHz   {cnr:+6.1f} dB  "
@@ -71,6 +71,9 @@ def main():
                     help="sam = synchronous AM, ~3 dB better on a weak station")
     ap.add_argument("--bw", type=float, default=5000,
                     help="channel filter bandwidth in Hz")
+    ap.add_argument("--offset", type=float, default=OFFSET_HZ,
+                    help="Hz to park the carrier away from DC; larger keeps "
+                         "the channel clear of DC artifacts and the I/Q image")
     ap.add_argument("--narrow", action="store_true",
                     help="2.5 kHz channel, 300-2400 Hz audio: trades top end "
                          "for noise, worth it on a marginal signal")
@@ -86,14 +89,14 @@ def main():
     args = ap.parse_args()
 
     kw = {"port": args.port} if args.port else {}
-    with RadioBoard(**kw) as board:
+    with RadioBoard(offset=args.offset, **kw) as board:
         print(board.start_adc())
 
         if args.scan:
             print(f"scanning {args.start/1e3:.0f}-{args.stop/1e3:.0f} kHz, "
-                  f"carrier-to-noise at +/-{OFFSET_HZ:.0f} Hz:")
+                  f"carrier-to-noise at +/-{args.offset:.0f} Hz:")
             results = scan(board, int(args.seconds * 48000),
-                           args.start, args.stop, args.step)
+                           args.start, args.stop, args.step, args.offset)
             results.sort(key=lambda r: -r[1])
             print("\nstrongest:")
             for f, c in results[:8]:
@@ -103,6 +106,11 @@ def main():
         if not args.no_tune:
             lo = board.tune(args.tune)
             print(f"tuned {args.tune/1e6:.4f} MHz  (lo {lo/1e6:.4f} MHz)")
+
+        if args.stream and not board.offset_fits(24000, args.bw):
+            print(f"warning: {args.offset:.0f} Hz offset does not fit the "
+                  f"24 kHz stream; use --seconds (48 kHz capture) or set "
+                  f"ADC_DECIM 1 in the firmware")
 
         if args.stream:
             print(f"streaming {args.stream:.0f}s...")
@@ -119,7 +127,7 @@ def main():
         print(f"got {len(iq)} frames at {rate} Hz ({len(iq)/rate:.2f} s), "
               f"|iq| max {np.abs(iq).max():.4f}")
 
-        side = report_carrier(iq, rate)
+        side = report_carrier(iq, rate, args.offset)
 
         if not args.stream:
             print("\nstrongest bins (offset from centre):")

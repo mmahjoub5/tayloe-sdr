@@ -16,6 +16,10 @@ from .dsp import (
     carrier_power,
     channel_filter,
     demod,
+    equalize,
+    iq_correct,
+    iq_correct_carrier,
+    modulation_spectrum,
     spectrum,
     station_score,
     write_wav,
@@ -24,6 +28,6 @@ from .dsp import (
 __all__ = [
     "RadioBoard", "to_complex", "DEFAULT_PORT", "FULL_SCALE",
     "OFFSET_HZ", "TAYLOE_DIV",
-    "carrier_power", "channel_filter", "demod", "spectrum", "station_score",
+    "carrier_power", "channel_filter", "demod", "equalize", "iq_correct", "iq_correct_carrier", "modulation_spectrum", "spectrum", "station_score",
     "write_wav",
 ]

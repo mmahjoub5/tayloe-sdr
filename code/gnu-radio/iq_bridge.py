@@ -29,6 +29,13 @@ CONTROL = "tcp://127.0.0.1:5556"       # tune requests in
 # on the final value only.
 DEBOUNCE_S = 0.35
 
+# radiolib normalises to the ADC's full scale, so samples arrive around 0.005 --
+# this board uses only ~15 of 24 bits. GNU Radio blocks assume roughly unity,
+# and analog.am_demod_cf is worse than that: it hardcodes add_const_ff(-1.0)
+# for carrier removal, so it needs a carrier near 1.0 or its output is
+# dominated by DC. Scale on the way out.
+DEFAULT_GAIN = 200.0
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -37,6 +44,9 @@ def main():
     ap.add_argument("--tune", type=float, default=1.17e6)
     ap.add_argument("--no-tune", action="store_true")
     ap.add_argument("--control", default=CONTROL)
+    ap.add_argument("--gain", type=float, default=DEFAULT_GAIN,
+                    help="scale samples before publishing; GNU Radio's AM "
+                         "Demod wants a carrier near 1.0")
     ap.add_argument("--no-swap", action="store_true",
                     help="publish raw I/Q without un-mirroring the spectrum")
     args = ap.parse_args()
@@ -64,14 +74,24 @@ def main():
 
         total, rate = 0, None
         pending_hz, last_request = None, 0.0
+        peak_reported = False
         try:
             # seconds=None streams indefinitely, re-issuing as the firmware's
             # 120 s cap expires.
             for iq, rate in board.stream():
                 if total == 0:
                     print(f"sample rate {rate} Hz -- set this in the flowgraph")
-                sock.send(iq.astype(np.complex64).tobytes())
+                block = iq * args.gain
+                sock.send(block.astype(np.complex64).tobytes())
                 total += len(iq)
+
+                # Report the level once, so the gain can be judged rather than
+                # guessed at from the waterfall.
+                if peak_reported is False:
+                    pk = float(np.abs(block).max())
+                    print(f"peak after gain {args.gain:.0f}x: {pk:.3f}"
+                          f"   (aim near 1.0 for AM Demod)")
+                    peak_reported = True
 
                 # Drain the whole backlog, keeping only the newest. Processing
                 # one per block would turn a single drag into dozens of

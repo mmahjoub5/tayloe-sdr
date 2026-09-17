@@ -40,10 +40,14 @@ def carrier_power(iq, rate, offset=OFFSET_HZ, width=400.0, seg_s=0.17):
     spec = acc / nseg
     freqs = np.fft.fftshift(np.fft.fftfreq(seg, 1 / rate))
 
-    # Fixed noise reference band, not scaled to Nyquist: 10.8 kHz is the widest
-    # both the 48 kHz and 24 kHz paths share.
-    hi = min(10800.0, 0.9 * rate / 2)
-    noise = (np.abs(freqs) > offset + 1500) & (np.abs(freqs) < hi)
+    # Noise reference: everything that is neither the carrier, its image, nor
+    # DC. Defined by exclusion rather than as a fixed band above the offset --
+    # that assumed a small offset, and left no valid bins at all once the
+    # offset moved out past the cap.
+    nyq = 0.9 * rate / 2
+    noise = ((np.abs(np.abs(freqs) - offset) > 6000)   # clear of carrier+image
+             & (np.abs(freqs) > 2000)                  # clear of DC artifacts
+             & (np.abs(freqs) < nyq))
     if not noise.any():
         return 0.0, 1.0
     floor = max(np.mean(spec[noise]), 1e-12)
@@ -111,6 +115,48 @@ def station_score(iq, rate, offset=OFFSET_HZ, side=None):
     return depth * syllabic * 100.0, depth, syllabic
 
 
+def modulation_spectrum(iq, rate, lo=1.0, hi=500.0, top=6):
+    """Strongest lines in the envelope of the baseband, 1-500 Hz.
+
+    Interference sources fingerprint themselves here. A monitor writes its
+    refresh rate, a switching supply its switching frequency, mains rectifiers
+    120 Hz (or 100 Hz at 50 Hz mains). Broadcast programme audio does not
+    produce narrow lines -- it spreads across the syllabic range.
+
+    Returns [(hz, dB above neighbouring bins)], strongest first. The comparison
+    is local rather than global so a line is judged against its own
+    surroundings, which is what makes it a line rather than just loud.
+    """
+    env = np.abs(iq)
+    env = env - env.mean()
+    if len(env) < 1024:
+        return []
+
+    spec = np.abs(np.fft.rfft(env * np.hanning(len(env))))
+    freqs = np.fft.rfftfreq(len(env), 1 / rate)
+
+    band = (freqs >= lo) & (freqs <= hi)
+    if not band.any():
+        return []
+
+    out = []
+    for i in np.argsort(spec * band)[::-1]:
+        f = freqs[i]
+        if not (lo <= f <= hi):
+            continue
+        # Skip anything too close to a line already reported.
+        if any(abs(f - g) < 3.0 for g, _ in out):
+            continue
+        near = (np.abs(freqs - f) > 5) & (np.abs(freqs - f) < 25)
+        if not near.any():
+            continue
+        out.append((float(f), float(20 * np.log10(spec[i] / max(np.mean(spec[near]), 1e-15)))))
+        if len(out) >= top:
+            break
+
+    return out
+
+
 def spectrum(iq, rate, top=5, blank=2):
     """Strongest bins as offsets from the tuned centre.
 
@@ -145,7 +191,108 @@ def channel_filter(iq, rate, side=1.0, offset=OFFSET_HZ, bw=5000.0):
     return sosfiltfilt(sos, shifted.real) + 1j * sosfiltfilt(sos, shifted.imag)
 
 
-def demod(iq, rate, mode="am", side=1.0, bw=5000.0, audio_band=(200, 3000)):
+def iq_correct(iq):
+    """Correct gain and phase imbalance between the I and Q paths.
+
+    A Tayloe with mismatched sampling capacitors produces an image of every
+    signal at the mirror frequency. Measured here at only 17-22 dB down, and
+    with the carrier parked at +3 kHz its image lands at -3 kHz -- inside the
+    channel, where no filter can reach it.
+
+    Gram-Schmidt orthogonalisation: force Q to have the same power as I and to
+    be uncorrelated with it. For a signal whose I and Q are independent -- true
+    of noise and of anything not already an image -- that is exactly the
+    condition the mixer should have produced.
+
+        alpha = <I*Q> / <I*I>        how much of I has leaked into Q
+        Q'    = Q - alpha*I          remove it
+        Q''   = Q' * sqrt(<I*I>/<Q'*Q'>)   equalise the gain
+
+    Returns (corrected, gain_db, phase_deg) so the correction applied can be
+    reported rather than silently assumed.
+    """
+    i = np.real(iq).astype(np.float64)
+    q = np.imag(iq).astype(np.float64)
+    i = i - i.mean()
+    q = q - q.mean()
+
+    pi = np.mean(i * i)
+    if pi <= 0:
+        return iq, 0.0, 0.0
+
+    alpha = np.mean(i * q) / pi          # correlation = phase error
+    q = q - alpha * i
+
+    pq = np.mean(q * q)
+    if pq <= 0:
+        return iq, 0.0, 0.0
+    beta = np.sqrt(pi / pq)              # amplitude ratio = gain error
+    q = q * beta
+
+    return (i + 1j * q,
+            float(20 * np.log10(max(beta, 1e-12))),
+            float(np.degrees(np.arcsin(np.clip(alpha, -1, 1)))))
+
+
+def iq_correct_carrier(iq, rate, offset=OFFSET_HZ, width=300.0):
+    """Cancel the I/Q image, estimating the imbalance from the carrier.
+
+    An imbalanced mixer delivers  y = a*s + b*conj(s), so every signal appears
+    mirrored at -f, at |b/a| relative. Subtracting c*conj(y) with c = b/a*
+    cancels it.
+
+    Estimated from the carrier bin rather than whole-band statistics, which is
+    where `iq_correct()` fails: the band is dominated by noise added AFTER the
+    mixer, independently per channel. That noise is already balanced, so it
+    dilutes a whole-band estimate toward zero -- measured 0.01 dB of gain error
+    on a signal whose image was only 22 dB down.
+
+    At the carrier the SNR is 20+ dB, so the estimate is dominated by the
+    thing we are actually trying to correct.
+
+    Returns (corrected, leakage_db).
+    """
+    spec = np.fft.fft(iq)
+    freqs = np.fft.fftfreq(len(iq), 1 / rate)
+
+    pos = np.abs(freqs - offset) < width
+    neg = np.abs(freqs + offset) < width
+    if not pos.any() or not neg.any():
+        return iq, 0.0
+
+    kp = np.argmax(np.where(pos, np.abs(spec), 0))
+    kn = np.argmax(np.where(neg, np.abs(spec), 0))
+    if abs(spec[kp]) <= 0:
+        return iq, 0.0
+
+    c = spec[kn] / np.conj(spec[kp])
+    return iq - c * np.conj(iq), float(20 * np.log10(max(abs(c), 1e-12)))
+
+
+def equalize(iq, rate, fc=2700.0, max_boost_db=18.0):
+    """Undo the analog baseband roll-off.
+
+    The difference amps measure as a single pole at about 2.7 kHz (carrier
+    level falls 3.6 dB at 3 kHz, 9.6 at 8 kHz, 16.4 at 19 kHz -- a first-order
+    fit within 0.7 dB across the range). That costs treble, and asymmetrically:
+    with the carrier at +3 kHz the upper sideband sits further up the slope
+    than the lower one, which is audible as muffled and slightly hollow.
+
+    Applied to the RAW baseband, before any frequency shift, because that is
+    where the analog filter acted.
+
+    The boost is capped: an exact inverse would lift 20 kHz by 18 dB, and
+    there is nothing up there but noise.
+    """
+    spec = np.fft.fft(iq)
+    f = np.fft.fftfreq(len(iq), 1 / rate)
+    boost = np.minimum(np.sqrt(1 + (f / fc) ** 2), 10 ** (max_boost_db / 20))
+    return np.fft.ifft(spec * boost)
+
+
+def demod(iq, rate, mode="am", side=1.0, bw=5000.0,
+          audio_band=(200, 3000), offset=OFFSET_HZ, eq=False,
+          correct_iq=False):
     """Demodulate one channel of complex baseband.
 
     mode "am"  envelope detection -- simple, and fine on a strong station
@@ -154,12 +301,18 @@ def demod(iq, rate, mode="am", side=1.0, bw=5000.0, audio_band=(200, 3000)):
 
     bw narrows the channel filter; audio_band narrows the output. Both trade
     top-end audio for noise, which is the right trade on a marginal signal.
+    offset must match what the board was tuned with, or the channel filter
+    centres on the wrong place and removes the station instead of the noise.
     """
     # Strip the board's DC offset first. Envelope detection is shift-invariant
     # in theory, but a DC term beats against an offset carrier and lands a tone
     # at exactly the tuning offset -- loud enough to bury the programme audio.
     iq = iq - iq.mean()
-    iq = channel_filter(iq, rate, side, bw=bw)
+    if correct_iq:
+        iq, _ = iq_correct_carrier(iq, rate, offset)
+    if eq:
+        iq = equalize(iq, rate)
+    iq = channel_filter(iq, rate, side, offset=offset, bw=bw)
 
     if mode == "sam":
         # Synchronous AM. channel_filter leaves the carrier at DC, so it can

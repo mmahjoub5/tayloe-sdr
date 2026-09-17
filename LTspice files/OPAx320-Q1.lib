@@ -1,0 +1,419 @@
+*$
+* OPAx320-Q1 -- LTspice port of TI's PSpice macromodel
+*****************************************************************************
+* (C) Copyright 2022 Texas Instruments Incorporated. All rights reserved.
+* Original: TI PSpice model, Final 1.7, 17JUN2022, datasheet SLOS884B.
+* Green-Williams-Lis op amp macro-model architecture.
+* TI's disclaimer applies: provided as-is, no warranty of any kind.
+*****************************************************************************
+* PSpice -> LTspice conversion notes (what changed and why):
+*
+* 1. R_NOISELESS: PSpice used ".MODEL R_NOISELESS RES(T_ABS=-273.15)" to make
+*    the macromodel's internal resistors noise-free so that only the VNSE/FEMT
+*    blocks set en/in. LTspice has no RES model, so each resistor instead
+*    carries the (undocumented but reliable) "noiseless" attribute:
+*      R_R1 IN+ ESDP 10M noiseless
+*    Same effect: zero thermal noise contribution in .noise.
+*
+* 2. G/E ... VALUE={...} -> B-sources (Bxxx n+ n- I=... / V=...).
+*    Current direction convention is identical (n+ -> n- through the source),
+*    so no sign changes were needed.
+*
+* 3. PSpice "G1 a b TABLE {expr} = (x,y)(x,y)..." -> LTspice table(x, ...).
+*    Both hold the endpoint value outside the table range, so the CLAW curves
+*    behave the same at the rails.
+*
+* 4. LIMIT(x,lo,hi) -> limit(x,lo,hi). LTspice's limit() returns the middle of
+*    the three arguments, which equals PSpice's clamp as long as lo < hi
+*    (true everywhere here).
+*
+* 5. VSWITCH models -> LTspice SW models, using
+*      Vt = (VON+VOFF)/2 and Vh = -(VON-VOFF)/2
+*    The negative Vh gives a smooth, hysteresis-free transition over the same
+*    control-voltage window PSpice used, which is what these ESD / overload
+*    switches assume.
+*
+* 6. PWR(x,y) (= |x|^y in PSpice) -> explicit arithmetic: PWR(NVRF,2) is now
+*    NVRF*NVRF, and PWR(FLW,0.5)/1E11 in the DVN flicker-noise diode was
+*    evaluated at FLW=10 and hardcoded as KF=3.16227766E-11, because LTspice
+*    is unreliable about expressions inside .MODEL that reference subcircuit
+*    parameters. FLW is still on the VNSE parameter list for compatibility but
+*    no longer drives KF -- if you ever change FLW, update KF to sqrt(FLW)/1E11.
+*
+* 7. Node/port names containing '+' or '-' that appeared *inside* behavioral
+*    expressions were renamed (VC+ -> VCP, IOUT- -> IOUTN, etc.) so LTspice's
+*    expression parser cannot mistake them for operators. Port ORDER is
+*    unchanged, so every instance line still connects identically. The pins of
+*    the top-level subcircuit (IN+ IN- VCC VEE OUT) are untouched.
+*
+* 8. Internal node "SW_OL_OPAx320-Q1" (same string as a subcircuit name) was
+*    renamed SW_OL_NODE. The VOS_DRIFT parameter "DC" was renamed VOSDC to
+*    avoid colliding with the DC keyword.
+*
+* 9. "PARAMS:" removed from X instance lines (kept on .SUBCKT lines, where
+*    LTspice requires it) and the "DC" keyword dropped from I sources.
+*
+* Usage: put this file next to your .asc (or in
+* ~/Library/Application Support/LTspice/lib/sub on macOS) and add
+*   .include OPAx320-Q1.lib
+* Pin order: IN+  IN-  VCC  VEE  OUT
+*****************************************************************************
+.SUBCKT OPAx320-Q1 IN+ IN- VCC VEE OUT
+*****************************************************************************
+C_C1 N24458 N24659 61.213F
+C_C10 N37029 N37037 19.76104U
+C_C11 MID N39473 35.991F
+C_C12 N39884 N39892 1.5612F
+C_C13 0 N2425309 1F
+C_C14 0 N2425287 100N
+C_C15 0 N2425325 1F
+C_C16 MID N56849 1F
+C_C17 MID N57325 1F
+C_C18 MID N59747 1F
+C_C19 MID N59865 1F
+C_C2 N25921 N25929 18.629P
+C_C20 MID N65579 1F
+C_C21 MID N65697 1F
+C_C22 MID N68774 1F
+C_C23 N72398 MID 1F
+C_C24 MID N72391 1F
+C_C25 MID N81574 1P
+C_C26 MID N81664 1P
+C_C27 MID SW_OL_NODE 1N
+C_C28 VCLP MID 1P
+C_C29 VIMON MID 1P
+C_C3 N27785 N27793 18.629P
+C_C30 VOUT_S MID 1P
+C_C32 MID N2419074 3.117831E-16
+C_C33 MID N36262 7.117831E-16
+C_C4 N32347 MID 1F
+C_C41 N2821521 N2821796 331.6P
+C_C5 CLAMP MID 30.6N
+C_C_COM0 ESDP MID 4P
+C_C_COM1 MID ESDN 4P
+C_C_DIFF ESDN ESDP 5P
+E_E1 MID 0 N2425287 0 1
+E_E2 N158495 MID CL_CLAMP MID 1
+E_E3 N161937 MID OUT MID 1
+G_G1 N24458 MID ESDP MID -863.09U
+G_G12 CLAW_CLAMP MID N36262 MID -1M
+G_G13 CL_CLAMP MID CLAW_CLAMP MID -1M
+G_G15 N37029 MID CL_CLAMP N45999 -341.4329
+G_G16 N39124 MID N37037 MID -1.6071
+G_G17 N39884 MID N39417 MID -1
+G_G18 VCC_B 0 VCC 0 -1
+G_G19 VEE_B 0 VEE 0 -1
+G_G2 N25415 N25397 N25248 MID -1M
+G_G20 VCC_CLP MID N72398 MID -1M
+G_G21 VEE_CLP MID N72391 MID -1M
+G_G22 N1356345 MID N1356333 MID -1
+G_G23 N1356409 MID N1356429 MID -1
+G_G26 N2419074 MID VSENSE MID -1U
+G_G27 N36262 MID N2419074 MID -1U
+G_G3 N25921 MID VEE_B MID -1.1733
+G_G35 N2821521 MID N24659 MID -1
+G_G36 N25248 MID N2821796 MID -416.7
+G_G4 N27785 MID VCC_B MID -1.1721
+G_G5 N28678 N28438 N27793 N25929 -1M
+G_G6 VSENSE MID CLAMP MID -1M
+I_I_B N24207 MID 200F
+I_I_OS ESDN MID 1F
+I_I_Q VCC VEE 1.45M
+R_R1 IN+ ESDP 10M noiseless
+R_R10 MID N25921 1 noiseless
+R_R102 N2821796 N2821521 10K noiseless
+R_R103 MID N2821521 1 noiseless
+R_R104 MID N2821796 24.06 noiseless
+R_R105 MID N25248 1 noiseless
+R_R11 MID N25929 427.1606 noiseless
+R_R12 N27793 N27785 100MEG noiseless
+R_R13 MID N27785 1 noiseless
+R_R14 MID N27793 427.1606 noiseless
+R_R15 N28438 N25415 1M noiseless
+R_R16 N28678 N28438 1K noiseless
+R_R17 N31303 ESDN 1M noiseless
+R_R18 MID N31389 1T noiseless
+R_R19 MID N31737 1T noiseless
+R_R2 IN- ESDN 10M noiseless
+R_R20 N32236 MID 1 noiseless
+R_R21 N32347 N32236 1M noiseless
+R_R22 MID N32510 1MEG noiseless
+R_R23 MID CLAMP 1MEG noiseless
+R_R24 MID VSENSE 1K noiseless
+R_R3 ESDP MID 1T noiseless
+R_R32 MID CLAW_CLAMP 1K noiseless
+R_R33 MID CL_CLAMP 1K noiseless
+R_R34 N37037 N37029 10K noiseless
+R_R35 MID N37029 1 noiseless
+R_R36 MID N37037 16.47254K noiseless
+R_R37 MID N39124 1 noiseless
+R_R38 N39417 N39124 52.922618K noiseless
+R_R39 N39473 N39417 10K noiseless
+R_R4 MID ESDN 1T noiseless
+R_R40 N39892 N39884 10K noiseless
+R_R41 MID N39884 1 noiseless
+R_R42 MID N39892 1.057141K noiseless
+R_R43 MID N46041 1 noiseless
+R_R46 VCC_B 0 1 noiseless
+R_R47 VCC_B N2425309 1M noiseless
+R_R48 N2425309 N2425287 1MEG noiseless
+R_R49 N2425287 0 1T noiseless
+R_R5 MID N24458 1 noiseless
+R_R50 N2425287 N2425325 1MEG noiseless
+R_R51 N2425325 VEE_B 1M noiseless
+R_R52 VEE_B 0 1 noiseless
+R_R53 VCC_CLP MID 1T noiseless
+R_R54 N55560 MID 1 noiseless
+R_R55 N56849 N55560 1M noiseless
+R_R56 VEE_CLP MID 1T noiseless
+R_R57 N57321 MID 1 noiseless
+R_R58 N57325 N57321 1M noiseless
+R_R59 N59739 MID 1T noiseless
+R_R6 N24659 N24458 100MEG noiseless
+R_R60 N59743 MID 1 noiseless
+R_R61 N59747 N59743 1M noiseless
+R_R62 N59865 N59881 1M noiseless
+R_R63 N59905 MID 1T noiseless
+R_R64 N59881 MID 1 noiseless
+R_R65 N65567 MID 1T noiseless
+R_R66 N65575 MID 1 noiseless
+R_R67 N65579 N65575 1M noiseless
+R_R68 N65697 N65713 1M noiseless
+R_R69 N65737 MID 1T noiseless
+R_R7 MID N24659 130.16922K noiseless
+R_R70 N65713 MID 1 noiseless
+R_R71 N68774 VSENSE 1M noiseless
+R_R72 VCC_B N72064 1K noiseless
+R_R73 N72064 N72398 1M noiseless
+R_R74 N72073 VEE_B 1K noiseless
+R_R75 N72073 N72391 1M noiseless
+R_R76 MID VCC_CLP 1K noiseless
+R_R77 VEE_CLP MID 1K noiseless
+R_R78 N1356409 MID 1 noiseless
+R_R79 N1356345 MID 1 noiseless
+R_R8 N25415 N25397 1K noiseless
+R_R80 V11 N81574 100 noiseless
+R_R81 V12 N81664 100 noiseless
+R_R82 N81756 MID 1 noiseless
+R_R83 N81756 SW_OL_NODE 100 noiseless
+R_R84 N158495 VCLP 100 noiseless
+R_R89 MID N2419074 1MEG noiseless
+R_R9 N25929 N25921 100MEG noiseless
+R_R90 MID N36262 1MEG noiseless
+R_RDUMMY MID N45999 5.247284K noiseless
+R_RX N45999 N46041 52.47284K noiseless
+R_RX1 MID N161737 1T noiseless
+R_RX2 VIMON N161737 100 noiseless
+R_RX3 MID N161937 1T noiseless
+R_RX4 VOUT_S N161937 100 noiseless
+V_VCM_MAX N31389 VCC_B 100M
+V_VCM_MIN N31737 VEE_B -100M
+V_V_GRN N65737 MID -115
+V_V_GRP N65567 MID 100
+V_V_ISCN N59905 MID -70.379
+V_V_ISCP N59739 MID 65
+V_V_ORN N1356333 VCLP -920.05M
+V_V_ORP N1356429 VCLP 920.05M
+X_H1 N45999 OUT N161737 MID BLOCK_DC_H1_OPAx320-Q1
+X_H2 N1356115 N1356409 V12 MID BLOCK_DC_H2_OPAx320-Q1
+X_H3 N1356061 N1356345 V11 MID BLOCK_DC_H3_OPAx320-Q1
+X_S1 N1356061 CLAMP N1356061 CLAMP BLOCK_DC_S1_OPAx320-Q1
+X_S2 CLAMP N1356115 CLAMP N1356115 BLOCK_DC_S2_OPAx320-Q1
+X_U1 ESDP N24207 VNSE_OPAx320-Q1 FLW=10 GLF=0.08402 RNV=58.016
+X_U10 VCC_CLP VEE_CLP VOUT_S MID N55560 N57321 CLAMP_AMP_LO_OPAx320-Q1 G=1
+X_U11 N59739 N59905 VIMON MID N59743 N59881 CLAMP_AMP_LO_OPAx320-Q1 G=1
+X_U12 N65567 N65737 N68774 MID N65575 N65713 CLAMP_AMP_HI_OPAx320-Q1 G=10
+X_U16 MID N81756 N81574 N81664 OL_SENSE_OPAx320-Q1
+X_U18 VIMON MID N72064 VCC_B CLAWP_OPAx320-Q1
+X_U19 MID VIMON VEE_B N72073 CLAWN_OPAx320-Q1
+X_U21 OUT VCC VEE ESD_OUT_OPAx320-Q1
+X_U22 N59747 N59865 CL_CLAMP MID CL_SRC_OPAx320-Q1 GAIN=1 IPOS=0.4E1
++ INEG=-0.46E1
+X_U23 N65579 N65697 CLAMP MID GR_SRC_OPAx320-Q1 GAIN=1 IPOS=0.61E1
++ INEG=-0.61E1
+X_U25 SW_OL_NODE MID N37029 N37037 SW_OL_OPAx320-Q1
+X_U26 VIMON MID VCC MID IQ_SRC_OPAx320-Q1 GAIN=1E-3
+X_U27 MID VIMON MID VEE IQ_SRC_OPAx320-Q1 GAIN=1E-3
+X_U30 N32347 N31303 MID N32510 AOL_1_OPAx320-Q1 GAIN=1E-4 IPOS=.5 INEG=-.5
+X_U31 N32510 MID MID CLAMP AOL_2_OPAx320-Q1 GAIN=0.041697 IPOS=0.315
++ INEG=-0.315
+X_U32 N39892 MID MID N46041 ZO_SRC_OPAx320-Q1 GAIN=10.4595 IPOS=6821.47E1
++ INEG=-7386.067E1
+X_U35 N56849 N57325 CLAW_CLAMP MID CLAW_SRC_OPAx320-Q1 GAIN=1 IPOS=0.2E1
++ INEG=-0.23E1
+X_U36 N24207 MID FEMT_OPAx320-Q1 NVRF=0.6
+X_U37 ESDN MID FEMT_OPAx320-Q1 NVRF=0.6
+X_U4 N25397 N24207 VOS_DRIFT_OPAx320-Q1 VOSDC=1.245E-05 POL=1 DRIFT=1.50E-06
+X_U5 ESDN ESDP VCC VEE ESD_IN_OPAx320-Q1
+X_U6 N28678 MID N32236 MID N31389 N31737 VCM_CLAMP_OPAx320-Q1 GAIN=1
+.ENDS OPAx320-Q1
+*
+*****************************************************************************
+* Support subcircuits
+*****************************************************************************
+*
+.SUBCKT BLOCK_DC_H1_OPAx320-Q1 1 2 3 4
+H_H1 3 4 VH_H1 1K
+VH_H1 1 2 0
+.ENDS BLOCK_DC_H1_OPAx320-Q1
+*
+.SUBCKT BLOCK_DC_H2_OPAx320-Q1 1 2 3 4
+H_H2 3 4 VH_H2 1
+VH_H2 1 2 0
+.ENDS BLOCK_DC_H2_OPAx320-Q1
+*
+.SUBCKT BLOCK_DC_H3_OPAx320-Q1 1 2 3 4
+H_H3 3 4 VH_H3 -1
+VH_H3 1 2 0
+.ENDS BLOCK_DC_H3_OPAx320-Q1
+*
+* VSWITCH(ROFF=1E12 RON=10M VOFF=0.0V VON=10MV) -> Vt=5m, Vh=-5m
+.SUBCKT BLOCK_DC_S1_OPAx320-Q1 1 2 3 4
+S_S1 3 4 1 2 SMOD_S1
+RS_S1 1 2 1G noiseless
+.MODEL SMOD_S1 SW(Ron=10m Roff=1E12 Vt=5m Vh=-5m)
+.ENDS BLOCK_DC_S1_OPAx320-Q1
+*
+.SUBCKT BLOCK_DC_S2_OPAx320-Q1 1 2 3 4
+S_S2 3 4 1 2 SMOD_S2
+RS_S2 1 2 1G noiseless
+.MODEL SMOD_S2 SW(Ron=10m Roff=1E12 Vt=5m Vh=-5m)
+.ENDS BLOCK_DC_S2_OPAx320-Q1
+*
+.SUBCKT AOL_1_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=1E-4 IPOS=.5 INEG=-.5
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS AOL_1_OPAx320-Q1
+*
+.SUBCKT AOL_2_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=0.041697 IPOS=0.315 INEG=-0.315
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS AOL_2_OPAx320-Q1
+*
+.SUBCKT CLAMP_AMP_HI_OPAx320-Q1 VCP VCN VIN COM VOP VOM PARAMS: G=10
+B_VOP COM VOP I=if(V(VIN,COM)>V(VCP,COM),(V(VIN,COM)-V(VCP,COM))*G,0)
+B_VOM COM VOM I=if(V(VIN,COM)<V(VCN,COM),(V(VCN,COM)-V(VIN,COM))*G,0)
+.ENDS CLAMP_AMP_HI_OPAx320-Q1
+*
+.SUBCKT CLAMP_AMP_LO_OPAx320-Q1 VCP VCN VIN COM VOP VOM PARAMS: G=1
+B_VOP COM VOP I=if(V(VIN,COM)>V(VCP,COM),(V(VIN,COM)-V(VCP,COM))*G,0)
+B_VOM COM VOM I=if(V(VIN,COM)<V(VCN,COM),(V(VCN,COM)-V(VIN,COM))*G,0)
+.ENDS CLAMP_AMP_LO_OPAx320-Q1
+*
+.SUBCKT CLAWN_OPAx320-Q1 VCP VCN IOUTP IOUTN
+B1 IOUTP IOUTN I=table(V(VCP,VCN),
++ 0, 10.96E-6,
++ 12.46, 0.00016055,
++ 23.46, 0.00033055,
++ 36.341, 0.0005865,
++ 46.919, 0.0008115,
++ 56.559, 0.0010602,
++ 64.905, 0.0014003,
++ 68.033, 0.0016047,
++ 69.597, 0.0018062,
++ 70.379, 0.0019381)
+.ENDS CLAWN_OPAx320-Q1
+*
+.SUBCKT CLAWP_OPAx320-Q1 VCP VCN IOUTP IOUTN
+B1 IOUTP IOUTN I=table(V(VCP,VCN),
++ 0, 10.73E-6,
++ 17.896, 0.0002413,
++ 35.793, 0.0006242,
++ 47.724, 0.0010174,
++ 49.514, 0.0010818,
++ 53.093, 0.0013016,
++ 56.690, 0.0015382,
++ 65, 0.00275)
+.ENDS CLAWP_OPAx320-Q1
+*
+.SUBCKT CLAW_SRC_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=1 IPOS=0.2E1 INEG=-0.23E1
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS CLAW_SRC_OPAx320-Q1
+*
+.SUBCKT CL_SRC_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=1 IPOS=0.4E1 INEG=-0.46E1
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS CL_SRC_OPAx320-Q1
+*
+* VSWITCH(RON=50 ROFF=1E12 VON=500E-3 VOFF=100E-3) -> Vt=300m, Vh=-200m
+.SUBCKT ESD_IN_OPAx320-Q1 ESDN ESDP VCC VEE
+.MODEL ESD_SW SW(Ron=50 Roff=1E12 Vt=300m Vh=-200m)
+S1 ESDN VCC ESDN VCC ESD_SW
+S2 ESDP VCC ESDP VCC ESD_SW
+S3 VEE ESDN VEE ESDN ESD_SW
+S4 VEE ESDP VEE ESDP ESD_SW
+.ENDS ESD_IN_OPAx320-Q1
+*
+.SUBCKT ESD_OUT_OPAx320-Q1 OUT VCC VEE
+.MODEL ESD_SW SW(Ron=50 Roff=1E12 Vt=300m Vh=-200m)
+S1 OUT VCC OUT VCC ESD_SW
+S2 VEE OUT VEE OUT ESD_SW
+.ENDS ESD_OUT_OPAx320-Q1
+*
+* Current-noise generator. R1/R2 are deliberately NOISY -- they are the source.
+.SUBCKT FEMT_OPAx320-Q1 1 2 PARAMS: NVRF=0.6
+E1 3 0 5 0 10
+R1 5 0 {1.184*NVRF*NVRF}
+R2 5 0 {1.184*NVRF*NVRF}
+G1 1 2 3 0 1E-6
+.ENDS FEMT_OPAx320-Q1
+*
+.SUBCKT GR_SRC_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=1 IPOS=0.61E1 INEG=-0.61E1
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS GR_SRC_OPAx320-Q1
+*
+.SUBCKT IQ_SRC_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=1E-3
+B1 IOUTP IOUTN I=if(V(VCP,VCN)<=0,0,GAIN*V(VCP,VCN))
+.ENDS IQ_SRC_OPAx320-Q1
+*
+.SUBCKT OL_SENSE_OPAx320-Q1 COM SWP OLN OLP
+B_SW COM SWP I=if((V(OLN,COM)>10E-3)|(V(OLP,COM)>10E-3),1,0)
+.ENDS OL_SENSE_OPAx320-Q1
+*
+* VSWITCH(RON=1E-3 ROFF=1E12 VON=900E-3 VOFF=800E-3) -> Vt=850m, Vh=-50m
+.SUBCKT SW_OL_OPAx320-Q1 SWCTL MID CAP_L CAP_R
+.MODEL OL_SW SW(Ron=1E-3 Roff=1E12 Vt=850m Vh=-50m)
+S1 CAP_L CAP_R SWCTL MID OL_SW
+.ENDS SW_OL_OPAx320-Q1
+*
+.SUBCKT VCM_CLAMP_OPAx320-Q1 VINP VINN IOUTN IOUTP VPP VPM PARAMS: GAIN=1
+B1 IOUTP IOUTN I=limit(GAIN*V(VINP,VINN),V(VPM,VINN),V(VPP,VINN))
+.ENDS VCM_CLAMP_OPAx320-Q1
+*
+* Voltage-noise generator: D1/D2 shot+flicker noise sets the 1/f corner,
+* R4/R5 set the broadband floor. KF = sqrt(FLW)/1E11 evaluated at FLW=10.
+.SUBCKT VNSE_OPAx320-Q1 1 2 PARAMS: FLW=10 GLF=0.08402 RNV=58.016
+.MODEL DVN D(KF=3.16227766E-11 AF=1 IS=1.0E-16)
+I1 0 7 10E-3
+I2 0 8 10E-3
+D1 7 0 DVN
+D2 8 0 DVN
+E1 3 6 7 8 {GLF}
+R1 3 0 1E9 noiseless
+R2 3 0 1E9 noiseless
+R3 3 6 1E9 noiseless
+E2 6 4 5 0 10
+R4 5 0 {RNV}
+R5 5 0 {RNV}
+R6 3 4 1E9 noiseless
+R7 4 0 1E9 noiseless
+E3 1 2 3 4 1
+.ENDS VNSE_OPAx320-Q1
+*
+.SUBCKT VOS_DRIFT_OPAx320-Q1 VOSP VOSN PARAMS: VOSDC=1.243E-05 POL=1 DRIFT=1.50E-06
+B1 VOSP VOSN V=VOSDC+POL*DRIFT*(temp-27)
+.ENDS VOS_DRIFT_OPAx320-Q1
+*
+.SUBCKT ZO_SRC_OPAx320-Q1 VCP VCN IOUTP IOUTN PARAMS: GAIN=10.4595 IPOS=6821.47E1 INEG=-7386.067E1
+B1 IOUTP IOUTN I=limit(GAIN*V(VCP,VCN),INEG,IPOS)
+.ENDS ZO_SRC_OPAx320-Q1
+*
+*****************************************************************************
+* Convenience aliases: OPA320-Q1 (single) and OPA2320-Q1 (one channel of the
+* dual -- instantiate it twice). Both are the same core as OPAx320-Q1.
+*****************************************************************************
+.SUBCKT OPA320-Q1 IN+ IN- VCC VEE OUT
+X1 IN+ IN- VCC VEE OUT OPAx320-Q1
+.ENDS OPA320-Q1
+*
+.SUBCKT OPA2320-Q1 IN+ IN- VCC VEE OUT
+X1 IN+ IN- VCC VEE OUT OPAx320-Q1
+.ENDS OPA2320-Q1
+*
