@@ -3,7 +3,7 @@
 import wave
 
 import numpy as np
-from scipy.signal import butter, resample_poly, sosfiltfilt
+from scipy.signal import butter, firwin, lfilter, resample_poly, sosfiltfilt
 
 from .board import OFFSET_HZ
 
@@ -290,6 +290,31 @@ def equalize(iq, rate, fc=2700.0, max_boost_db=18.0):
     return np.fft.ifft(spec * boost)
 
 
+def sideband_filter(iq, rate, upper=True, lo=300.0, hi=2700.0):
+    """Keep one sideband of a carrier-at-DC signal, rejecting the other.
+
+    SSB demodulation is "take the real part", but real() folds negative
+    frequencies onto positive ones -- so whatever sits on the unwanted side
+    lands on top of the audio. A symmetric channel filter leaves it there,
+    costing about 3 dB of noise and any interference on that side.
+
+    A complex bandpass fixes it: design a real lowpass at half the sideband
+    width, then modulate it up to the sideband's centre. The result passes
+    +lo..+hi and rejects -hi..-lo, so real() has nothing to fold in.
+    """
+    half = (hi - lo) / 2.0
+    centre = (hi + lo) / 2.0
+    if not upper:
+        centre = -centre
+
+    taps = firwin(255, half / (rate / 2))
+    n = np.arange(len(taps))
+    taps = taps * np.exp(2j * np.pi * centre * n / rate)
+
+    out = lfilter(taps, 1.0, iq)
+    return out[len(taps) // 2:]          # strip the filter's group delay
+
+
 def demod(iq, rate, mode="am", side=1.0, bw=5000.0,
           audio_band=(200, 3000), offset=OFFSET_HZ, eq=False,
           correct_iq=False):
@@ -332,9 +357,9 @@ def demod(iq, rate, mode="am", side=1.0, bw=5000.0,
         audio = np.abs(iq)
         audio -= audio.mean()          # strip the carrier's DC term
     elif mode in ("usb", "lsb"):
-        # One sideband is the real part once the unwanted half is discarded;
-        # conjugating swaps which half that is.
-        audio = np.real(iq if mode == "usb" else np.conj(iq))
+        # Reject the unwanted sideband BEFORE real() folds it in.
+        audio = np.real(sideband_filter(iq, rate, upper=(mode == "usb"),
+                                        lo=audio_band[0], hi=audio_band[1]))
     else:
         raise ValueError(f"unknown mode {mode}")
 

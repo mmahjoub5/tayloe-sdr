@@ -21,6 +21,12 @@ OFFSET_HZ = 3000.0          # park carriers here, clear of the board's DC offset
 # rate/2. At ADC_DECIM 2 (24 kHz) that caps the offset near 9 kHz; reaching
 # 15 kHz needs ADC_DECIM 1.
 FULL_SCALE = 1 << 23        # 24-bit samples -> roughly +/-1.0
+
+# Measured against KLOK's carrier (broadcast carriers hold to a few Hz): the
+# 25 MHz crystal reads 3.09 ppm low. Uncorrected that is 44 Hz of error at
+# 20 m, enough to pitch SSB voices audibly wrong. Applied at start_adc(),
+# since the firmware's own init() defaults to zero and a board reset loses it.
+XTAL_CORR_PPB = -3093
 MAX_CAPTURE = 8192          # ADC_MAX_CAPTURE in audio_adc.h
 STREAM_CHUNK_S = 120        # the firmware's per-stream limit
 
@@ -51,12 +57,14 @@ class RadioBoard:
     """One serial connection to the board, plus the protocol on top of it."""
 
     def __init__(self, port=DEFAULT_PORT, baud=115200, timeout=1.0, swap=True,
-                 offset=OFFSET_HZ):
+                 offset=OFFSET_HZ, corr=XTAL_CORR_PPB):
         self.ser = serial.Serial(port, baud, timeout=timeout)
         self.swap = swap
         # Kept on the instance so tuning and demodulation cannot disagree about
         # where the carrier was placed.
         self.offset = float(offset)
+        self.corr = int(corr)
+        self._corr_applied = False
         self._pending_tune = None
         self._tuned_to = None
         time.sleep(0.3)
@@ -81,6 +89,11 @@ class RadioBoard:
         return self.ser.read(self.ser.in_waiting or 1).decode(errors="replace").strip()
 
     def start_adc(self, rate=None):
+        # The crystal correction has to go in before the ADC starts: init()
+        # resets the chip, which would stop SCKI and stall the capture.
+        if self.corr and not self._corr_applied:
+            self.command(f"init 8 {self.corr}", wait=1.0)
+            self._corr_applied = True
         return self.command(f"adc start {int(rate)}" if rate else "adc start",
                             wait=0.6)
 
