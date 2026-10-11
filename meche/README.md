@@ -52,6 +52,27 @@ up hidden inside an opaque box.
 The FreeCAD file contains plain solids with no feature history — make changes
 in `enclosure.py`, not in FreeCAD.
 
+### Upload to Google Drive
+
+```sh
+cad/push_gdrive.sh              # rebuild, then upload
+cad/push_gdrive.sh --no-build   # upload what's already in out/
+cad/push_gdrive.sh --dry-run    # show what would be uploaded
+```
+
+Each run creates `enclosure-<commit>/` in the
+[shared Drive folder](https://drive.google.com/drive/folders/13Hm9unFtqh6zarxSVeAzXLbvdvOx-9Om)
+with `print/`, the assembly STEP, `enclosure.FCStd` and a `VERSION.txt` naming
+the commit. Uncommitted design changes upload as `enclosure-<commit>-dirty`,
+so commit first if you want a clean name.
+
+One-time setup (opens a browser to sign in to Google):
+
+```sh
+brew install rclone
+rclone config create gdrive drive scope=drive
+```
+
 ## Printing
 
 | Part | Orientation | Supports |
