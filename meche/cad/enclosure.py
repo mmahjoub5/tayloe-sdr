@@ -113,9 +113,7 @@ for (px, py) in [(0.4, 0.4), (BW - PIN - 0.4, 0.4), (0.4, BL - PIN - 0.4),
                  (BW - PIN - 0.4, BL - PIN - 0.4)]:
     lid = lid.union(rbox(px, py, PIN, PIN, SPLIT + 0.05, CEIL + 0.1))
 lid = lid.cut(sma_cut).cut(usb_cut).cut(sma_pocket)
-# encoder shaft hole with a raised collar
-lid = lid.union(cq.Workplane("XY").workplane(offset=z_top - 0.1).center(ENC_X, ENC_Y)
-                .circle(5.0).extrude(0.9))
+# encoder shaft hole (top stays flat so the lid prints face-down)
 lid = lid.cut(cq.Workplane("XY").workplane(offset=CEIL - 1).center(ENC_X, ENC_Y)
               .circle(3.6).extrude(TOP + 3))
 # screw pilots
@@ -129,7 +127,7 @@ def engrave_top(body, text, x, y, size):
     return body.cut(t)
 
 lid = engrave_top(lid, "TAYLOE SDR", 26, 20, 6.0)
-lid = engrave_top(lid, "HF QSD RECEIVER", 26, 12, 3.2)
+lid = engrave_top(lid, "MAHJOUB'S STUDIO", 26, 12, 3.2)
 lid = engrave_top(lid, "TUNE", ENC_X, ENC_Y - 13, 3.2)
 def engrave_side(body, text, origin, xdir, normal):
     pl = cq.Plane(origin=origin, xDir=xdir, normal=normal)
@@ -142,7 +140,7 @@ lid = engrave_side(lid, "USB", (USB_X - 15, oy0 + ol, 5.7), (-1, 0, 0), (0, 1, 0
 
 # ---------------- knob (6 mm D-shaft, flat at 4.5 mm) --------------------------
 KNOB_D, KNOB_H = 20.0, 12.0
-kz0 = z_top + 0.8 + 0.6                     # sits above the collar
+kz0 = z_top + 1.4                           # clearance above the lid
 knob = (cq.Workplane("XY").workplane(offset=kz0).center(ENC_X, ENC_Y)
         .polygon(30, KNOB_D).extrude(KNOB_H).edges(">Z").fillet(1.5))
 bore_depth = min(SHAFT_TOP - kz0 + 0.3, KNOB_H - 2.5)
@@ -161,6 +159,20 @@ cq.exporters.export(lid, f"{OUT}/enclosure_lid.step")
 cq.exporters.export(knob, f"{OUT}/knob.step")
 for name, part in (("enclosure_base", base), ("enclosure_lid", lid), ("knob", knob)):
     cq.exporters.export(part, f"{OUT}/{name}.stl", tolerance=0.02, angularTolerance=0.1)
+
+# print-ready copies: each part on its flat face, resting on Z = 0
+import os
+os.makedirs(f"{OUT}/print", exist_ok=True)
+def on_bed(part, flip=False):
+    if flip:
+        part = part.rotate((0, 0, 0), (1, 0, 0), 180)
+    return part.translate((0, 0, -part.val().BoundingBox().zmin))
+for name, part in (("base", on_bed(base)), ("lid", on_bed(lid, flip=True)),
+                   ("knob", on_bed(knob))):
+    # finer meshes make the engraved lettering self-intersect more, not less
+    cq.exporters.export(part, f"{OUT}/print/{name}.stl", tolerance=0.02, angularTolerance=0.1)
+    cq.exporters.export(part, f"{OUT}/print/{name}.3mf", tolerance=0.02, angularTolerance=0.1)
+    cq.exporters.export(part, f"{OUT}/print/{name}.step")   # slicers that take STEP mesh it cleanly
 
 board = cq.importers.importStep(sys.argv[2])
 asm = cq.Assembly(name="tayloe_sdr_enclosure")
