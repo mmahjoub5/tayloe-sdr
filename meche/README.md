@@ -54,24 +54,19 @@ in `enclosure.py`, not in FreeCAD.
 
 ### Upload to Google Drive
 
-```sh
-cad/push_gdrive.sh              # rebuild, then upload
-cad/push_gdrive.sh --no-build   # upload what's already in out/
-cad/push_gdrive.sh --dry-run    # show what would be uploaded
-```
-
-Each run creates `enclosure-<commit>/` in the
-[shared Drive folder](https://drive.google.com/drive/folders/13Hm9unFtqh6zarxSVeAzXLbvdvOx-9Om)
-with `print/`, the assembly STEP, `enclosure.FCStd` and a `VERSION.txt` naming
-the commit. Uncommitted design changes upload as `enclosure-<commit>-dirty`,
-so commit first if you want a clean name.
-
-One-time setup (opens a browser to sign in to Google):
+Needs [Google Drive for desktop](https://www.google.com/drive/download/)
+running and signed in.
 
 ```sh
-brew install rclone
-rclone config create gdrive drive scope=drive
+cad/push_gdrive.sh              # rebuild, then copy to Drive
+cad/push_gdrive.sh --no-build   # copy what's already in out/
 ```
+
+Each run creates `My Drive/radio-project/print-files/<MM-DD>-<commit>/` with
+`print/`, the assembly STEP, `enclosure.FCStd` and a `VERSION.txt` naming the
+commit; Drive uploads it in the background. Uncommitted design changes get a
+`-dirty` suffix, so commit first if you want a clean name. Set `DRIVE_DIR` to
+copy somewhere else.
 
 ## Printing
 
