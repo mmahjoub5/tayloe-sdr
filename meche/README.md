@@ -2,7 +2,8 @@
 
 Two-piece enclosure (base + lid) and tuning knob for the Tayloe SDR board,
 generated from code. The board drops into the base, the lid closes over it at
-the board's top surface, and four M2.5 screws from below hold it together.
+the board's top surface, and snaps shut on neodymium magnets pressed into
+both rims.
 
 ```
 cad/enclosure.py   the design (CadQuery) — edit this
@@ -81,8 +82,27 @@ STEP (PrusaSlicer, Bambu Studio, OrcaSlicer): the lid STL has ~100 tiny
 self-intersections inside the engraved letters. Slicers repair them
 automatically, but STEP avoids them.
 
-Hardware: 4 × M2.5 × 8 mm screws (self-tapping into the lid), 4 × 8 mm
-stick-on rubber feet (they sit in 0.6 mm pockets on the bottom).
+Hardware: 8 × 6 × 2 mm neodymium disc magnets (4 per half; 4 total with
+`MAGNET_LAYOUT = "sides"`), 4 × 8 mm stick-on rubber feet (they sit in 0.6 mm
+pockets on the bottom).
+
+### Fitting the magnets
+
+Each half has open recesses in its mating face, one per corner, sized
+6.2 × 2.0 mm so the magnets press in flush and touch face to face when the lid
+is on. A lip on the base rim drops into a groove in the lid (0.3 mm clearance)
+to locate it. No print pauses or supports are needed.
+
+To get the polarity right without thinking about it:
+1. Press the 4 base magnets in, all the same way up.
+2. Let a second magnet snap onto each one (they self-orient to attract).
+3. Put a drop of CA glue in each lid recess if the press fit is loose,
+   lower the lid straight down onto the stacked magnets and press: they
+   go into the lid recesses in the correct orientation.
+
+The walls are as thick as the magnets need (`WALL` is computed, 9.1 mm for
+6 mm magnets), so the box grows outward; the SMA and USB openings get outside
+recesses that bring the wall back to 2.4 mm in front of each port.
 
 ## Common tweaks
 
@@ -90,11 +110,13 @@ All dimensions are in mm, at the top of `cad/enclosure.py`:
 
 | Parameter | Default | Change it when |
 |---|---|---|
-| `LIP_CLR` | 0.15 | lid won't press onto the base → 0.2–0.3 |
+| `LIP_CLR` | 0.3 | lid is loose on the base → 0.2 |
 | `SMA_CLR` / `SMA_FLANGE_CLR` | 0.45 / 0.5 | SMA connector is tight in its hole |
-| `SCREW_PILOT` | 2.2 | switching to heat-set inserts (use the insert's hole size) |
+| `MAGNET_D`, `MAGNET_T`, `MAGNET_FIT` | 6 / 2 / 0.2 | different magnets, or the press fit is too tight/loose; the walls resize automatically |
+| `MAGNET_LAYOUT` | `"corners"` | `"sides"` for 2 magnets per half, mid-span left/right |
+| `R_OUT` | 3.0 | rounder corners (keep ≤ 3.9 with corner magnets; the build warns if a wall gets thin) |
 | `KNOB_D`, `KNOB_H` | 20 / 12 | different knob size |
-| `WALL`, `TOP`, `FLOOR` | 2.4 / 2.0 / 2.0 | stiffer or lighter shell |
+| `WALL_MIN`, `TOP`, `FLOOR` | 2.4 / 2.0 / 2.0 | stiffer or lighter shell (`WALL` itself follows the magnet size) |
 | `USB_W`, `USB_H` | 12.6 / 7.0 | your USB-C plug housing doesn't fit |
 
 Lid text is set near the end of the lid section (`engrave_top(...)` lines).

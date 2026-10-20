@@ -2,9 +2,12 @@
 
 Board frame (from the KiCad STEP): board occupies X 0..70, Y 0..70, Z 0..1.42.
 Parting line is the board's top surface (Z = 1.42): the board drops into the
-base, the lid closes over it, and four M2.5 screws from below hold it together.
-The board has no mounting holes, so it is clamped at its four corners between
-posts in the base and pins in the lid.
+base and the lid snaps on with neodymium disc magnets pressed into flush
+recesses in both rims. A lip on the base rim fits a groove in the lid to
+locate it. The rim is as thick as the magnets need, so the walls grow outward
+and the outside stays a plain rounded square. The board has no mounting holes,
+so it is clamped at its four corners between posts in the base and pins in
+the lid.
 """
 import sys
 import cadquery as cq
@@ -25,18 +28,28 @@ USB_W, USB_H = 12.6, 7.0               # opening sized for typical plug overmold
 ENC_X, ENC_Y = 60.47, 49.87            # encoder shaft axis
 SHAFT_TOP = 16.5
 
+# ---------------- magnets (flush, press-fit in both rims) ---------------------
+MAGNET_D, MAGNET_T = 6.0, 2.0  # neodymium disc
+MAGNET_FIT = 0.2               # added to the diameter for a press fit
+MAGNET_LAYOUT = "corners"      # "corners" (4 per half) or "sides" (2, mid-span left/right)
+RIM_MARGIN = 0.8               # min plastic between a pocket and any surface
+POCKET_D = MAGNET_D + MAGNET_FIT
+POCKET_DEPTH = MAGNET_T        # magnets sit flush with the mating face
+
 # ---------------- enclosure parameters ----------------------------------------
 GAP = 0.3          # board-to-wall clearance
-WALL = 2.4
 FLOOR = 2.0
 FLOOR_TOP = -3.0   # encoder leads reach Z = -2.09
 CEIL = 8.0         # inner ceiling (encoder body top = 7.10)
 TOP = 2.0
-LIP_W, LIP_H, LIP_CLR = 1.0, 1.5, 0.15
-R_OUT = 3.0
-BOSS_R, BOSS_OFF = 3.4, 3.4
-SCREW_CLR, SCREW_PILOT = 2.9, 2.2
-CB_D, CB_DEPTH = 5.5, 3.0
+LIP_W, LIP_H, LIP_CLR = 1.0, 1.5, 0.3   # locating lip on the base, groove in the lid
+R_OUT = 3.0        # outer vertical-edge fillet
+WALL_MIN = 2.4
+# the rim band between the lid groove and the outside must hold a pocket
+WALL = max(WALL_MIN, LIP_W + LIP_CLR + POCKET_D + 2 * RIM_MARGIN)
+PORT_WALL = 2.4    # wall left in front of the SMA / USB, via outside recesses
+SMA_RECESS_D = 12.0                    # room for the antenna plug's coupling nut
+USB_RECESS_W, USB_RECESS_H = 16.0, 10.0
 
 cx0, cy0 = -GAP, -GAP
 cw, cl = BW + 2 * GAP, BL + 2 * GAP
@@ -47,19 +60,22 @@ CX, CY = BW / 2, BL / 2
 z_bot = FLOOR_TOP - FLOOR
 z_top = CEIL + TOP
 
+# magnet centres: in the rim band, RIM_MARGIN clear of the lid groove
+_m = LIP_W + LIP_CLR + RIM_MARGIN + POCKET_D / 2      # inward from the cavity edge
+if MAGNET_LAYOUT == "corners":
+    mag_pts = [(cx0 - _m, cy0 - _m), (cx0 + cw + _m, cy0 - _m),
+               (cx0 - _m, cy0 + cl + _m), (cx0 + cw + _m, cy0 + cl + _m)]
+elif MAGNET_LAYOUT == "sides":
+    mag_pts = [(cx0 - _m, CY), (cx0 + cw + _m, CY)]
+else:
+    raise ValueError(MAGNET_LAYOUT)
+
 def rbox(x0, y0, w, l, z0, z1, r=0.0):
     wp = cq.Workplane("XY").workplane(offset=z0).center(x0 + w / 2, y0 + l / 2)
     s = wp.rect(w, l).extrude(z1 - z0)
     if r > 0:
         s = s.edges("|Z").fillet(r)
     return s
-
-boss_pts = [(-BOSS_OFF, -BOSS_OFF), (BW + BOSS_OFF, -BOSS_OFF),
-            (-BOSS_OFF, BL + BOSS_OFF), (BW + BOSS_OFF, BL + BOSS_OFF)]
-
-def bosses(z0, z1):
-    return (cq.Workplane("XY").workplane(offset=z0).pushPoints(boss_pts)
-            .circle(BOSS_R).extrude(z1 - z0))
 
 def lip_ring(clr):
     outer = rbox(cx0 - LIP_W - clr, cy0 - LIP_W - clr,
@@ -68,6 +84,10 @@ def lip_ring(clr):
     inner = rbox(cx0 - clr, cy0 - clr, cw + 2 * clr, cl + 2 * clr,
                  SPLIT - 1, SPLIT + LIP_H + 2, 0.3)
     return outer.cut(inner)
+
+def magnet_pockets(z0):
+    return (cq.Workplane("XY").workplane(offset=z0).pushPoints(mag_pts)
+            .circle(POCKET_D / 2).extrude(POCKET_DEPTH))
 
 # side cut-outs (shared by both halves)
 sma_cut = (cq.Workplane("YZ").workplane(offset=ox0 - 1).center(SMA_Y, SMA_Z)
@@ -78,9 +98,17 @@ sma_pocket = rbox(-1.0, SMA_Y - _fh, 1.2, 2 * _fh, SMA_Z - _fh, SMA_Z + _fh)
 usb_cut = (cq.Workplane("XZ").workplane(offset=-(BL + GAP - 1.5))
            .center(USB_X, USB_Z).rect(USB_W, USB_H).extrude(-(WALL + LIP_W + 4))
            .edges("|Y").fillet(1.5))
+# outside recesses thin the thick rim back to PORT_WALL in front of each port,
+# so the SMA thread still sticks out and a USB plug reaches its receptacle
+sma_recess = (cq.Workplane("YZ").workplane(offset=ox0 - 1).center(SMA_Y, SMA_Z)
+              .circle(SMA_RECESS_D / 2).extrude(WALL - PORT_WALL + 1))
+usb_recess = (cq.Workplane("XZ").workplane(offset=-(oy0 + ol + 1))
+              .center(USB_X, USB_Z).rect(USB_RECESS_W, USB_RECESS_H)
+              .extrude(WALL - PORT_WALL + 1).edges("|Y").fillet(2.0))
+ports = sma_cut.union(usb_cut).union(sma_pocket).union(sma_recess).union(usb_recess)
 
 # ---------------- base ---------------------------------------------------------
-base = rbox(ox0, oy0, ow, ol, z_bot, SPLIT, R_OUT).union(bosses(z_bot, SPLIT))
+base = rbox(ox0, oy0, ow, ol, z_bot, SPLIT, R_OUT)
 base = base.cut(rbox(cx0, cy0, cw, cl, FLOOR_TOP, SPLIT + 1, 0.3))
 base = base.union(lip_ring(0.0))
 # corner posts: board rests on these (board underside Z = 0)
@@ -90,19 +118,14 @@ for (px, py) in [(0, 0), (BW - POST, 0), (0, BL - POST), (BW - POST, BL - POST)]
 # mid-span posts on front/back edges stop the board flexing when the knob is pushed
 for (px, py) in [(BW / 2 - 2, 0), (BW / 2 - 2, BL - 3)]:
     base = base.union(rbox(px, py, 4.0, 3.0, FLOOR_TOP - 0.1, 0.0))
-base = base.cut(sma_cut).cut(usb_cut).cut(sma_pocket)
-# screw holes + counterbores from below
-base = base.cut(cq.Workplane("XY").workplane(offset=z_bot - 1).pushPoints(boss_pts)
-                .circle(SCREW_CLR / 2).extrude(SPLIT - z_bot + 2))
-base = base.cut(cq.Workplane("XY").workplane(offset=z_bot - 1).pushPoints(boss_pts)
-                .circle(CB_D / 2).extrude(CB_DEPTH + 1))
+base = base.cut(ports)
 # shallow pockets for 8 mm stick-on rubber feet
 feet = [(8, 8), (BW - 8, 8), (8, BL - 8), (BW - 8, BL - 8)]
 base = base.cut(cq.Workplane("XY").workplane(offset=z_bot - 1).pushPoints(feet)
                 .circle(4.3).extrude(1.6))
 
 # ---------------- lid ----------------------------------------------------------
-lid = rbox(ox0, oy0, ow, ol, SPLIT, z_top, R_OUT).union(bosses(SPLIT, z_top))
+lid = rbox(ox0, oy0, ow, ol, SPLIT, z_top, R_OUT)
 lid = lid.cut(rbox(cx0, cy0, cw, cl, SPLIT - 1, CEIL, 0.3))
 lid = lid.cut(rbox(cx0 - LIP_W - LIP_CLR, cy0 - LIP_W - LIP_CLR,
                    cw + 2 * (LIP_W + LIP_CLR), cl + 2 * (LIP_W + LIP_CLR),
@@ -112,13 +135,10 @@ PIN = 3.0
 for (px, py) in [(0.4, 0.4), (BW - PIN - 0.4, 0.4), (0.4, BL - PIN - 0.4),
                  (BW - PIN - 0.4, BL - PIN - 0.4)]:
     lid = lid.union(rbox(px, py, PIN, PIN, SPLIT + 0.05, CEIL + 0.1))
-lid = lid.cut(sma_cut).cut(usb_cut).cut(sma_pocket)
+lid = lid.cut(ports)
 # encoder shaft hole (top stays flat so the lid prints face-down)
 lid = lid.cut(cq.Workplane("XY").workplane(offset=CEIL - 1).center(ENC_X, ENC_Y)
               .circle(3.6).extrude(TOP + 3))
-# screw pilots
-lid = lid.cut(cq.Workplane("XY").workplane(offset=SPLIT - 1).pushPoints(boss_pts)
-              .circle(SCREW_PILOT / 2).extrude(CEIL - SPLIT + 1.5))
 
 # engraved labels (0.6 mm deep)
 def engrave_top(body, text, x, y, size):
@@ -137,6 +157,31 @@ def engrave_side(body, text, origin, xdir, normal):
 
 lid = engrave_side(lid, "ANT", (ox0, SMA_Y + 12, 5.7), (0, -1, 0), (-1, 0, 0))
 lid = engrave_side(lid, "USB", (USB_X - 15, oy0 + ol, 5.7), (-1, 0, 0), (0, 1, 0))
+
+# ---------------- magnet recesses in both mating faces ------------------------
+base_solid, lid_solid = base, lid            # kept for the wall check
+base_pk = magnet_pockets(SPLIT - POCKET_DEPTH)
+lid_pk = magnet_pockets(SPLIT)
+base = base.cut(base_pk)
+lid = lid.cut(lid_pk)
+
+def min_wall(solid, pockets):
+    """Thinnest side wall around any pocket (or between two pockets)."""
+    bb, pb = solid.val().BoundingBox(), pockets.val().BoundingBox()
+    band = (cq.Workplane("XY").box(bb.xlen + 20, bb.ylen + 20, pb.zlen)
+            .translate((bb.center.x, bb.center.y, pb.center.z)))
+    outside = band.cut(solid)
+    ps = pockets.solids().vals()
+    walls = [outside.val().distance(p) for p in ps]
+    walls += [a.distance(b) for i, a in enumerate(ps) for b in ps[i + 1:]]
+    return min(walls)
+
+print(f"magnets: {len(mag_pts)} per half ({MAGNET_LAYOUT}), {MAGNET_D} x {MAGNET_T} mm; "
+      f"recess {POCKET_D:.2f} dia x {POCKET_DEPTH:.2f} deep (flush); wall {WALL:.2f} mm")
+for name, solid, pk in (("base", base_solid, base_pk), ("lid", lid_solid, lid_pk)):
+    w = min_wall(solid, pk)
+    print(f"{name}: min wall around recesses {w:.2f} mm"
+          + ("" if w >= RIM_MARGIN - 1e-6 else f"  WARNING: < {RIM_MARGIN} mm"))
 
 # ---------------- knob (6 mm D-shaft, flat at 4.5 mm) --------------------------
 KNOB_D, KNOB_H = 20.0, 12.0
@@ -163,12 +208,14 @@ for name, part in (("enclosure_base", base), ("enclosure_lid", lid), ("knob", kn
 # print-ready copies: each part on its flat face, resting on Z = 0
 import os
 os.makedirs(f"{OUT}/print", exist_ok=True)
-def on_bed(part, flip=False):
+# exact offsets rather than a bounding box, which can be slightly loose
+def on_bed(part, bottom, flip=False):
     if flip:
         part = part.rotate((0, 0, 0), (1, 0, 0), 180)
-    return part.translate((0, 0, -part.val().BoundingBox().zmin))
-for name, part in (("base", on_bed(base)), ("lid", on_bed(lid, flip=True)),
-                   ("knob", on_bed(knob))):
+        bottom = -bottom
+    return part.translate((0, 0, -bottom))
+for name, part in (("base", on_bed(base, z_bot)), ("lid", on_bed(lid, z_top, flip=True)),
+                   ("knob", on_bed(knob, kz0))):
     # finer meshes make the engraved lettering self-intersect more, not less
     cq.exporters.export(part, f"{OUT}/print/{name}.stl", tolerance=0.02, angularTolerance=0.1)
     cq.exporters.export(part, f"{OUT}/print/{name}.3mf", tolerance=0.02, angularTolerance=0.1)
