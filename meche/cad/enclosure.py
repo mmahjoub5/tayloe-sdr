@@ -19,14 +19,18 @@ BW, BL, BT = 70.0, 70.0, 1.42          # board size / thickness
 SPLIT = BT                             # parting plane = board top
 SMA_Y, SMA_Z = 14.17, 2.00             # SMA barrel axis (flange centre)
 SMA_THREAD = 6.35                      # 1/4-36 thread OD
-SMA_FLANGE = 6.35                      # square flange, sits 0.43 mm proud of board edge
+SMA_FLANGE = 6.35                      # square flange (model: 0.43 mm proud of board edge)
+SMA_PROUD = 2.0                        # how far the flange face may sit outside the board
+                                       # edge; hand soldering puts it further out than the model
+SMA_FLANGE_GAP = 0.3                   # clearance in front of the flange at SMA_PROUD
+SMA_PLATE = 1.6                        # wall left between flange pocket and outside recess
 SMA_CLR = 0.45                         # radial clearance, barrel hole
 SMA_FLANGE_CLR = 0.5                   # per-side clearance, flange pocket
 SMA_D = SMA_THREAD + 2 * SMA_CLR
 USB_X, USB_Z = 34.72, 3.81             # USB-C receptacle centre
 USB_W, USB_H = 12.6, 7.0               # opening sized for typical plug overmold
-ENC_X, ENC_Y = 60.47, 49.87            # encoder shaft axis
-SHAFT_TOP = 16.5
+# the rotary encoder footprint (X 54..67, Y 44..56) is left unpopulated:
+# no shaft opening, no knob
 
 # ---------------- magnets (flush, press-fit in both rims) ---------------------
 MAGNET_D, MAGNET_T = 6.0, 2.0  # neodymium disc
@@ -47,7 +51,7 @@ R_OUT = 3.0        # outer vertical-edge fillet
 WALL_MIN = 2.4
 # the rim band between the lid groove and the outside must hold a pocket
 WALL = max(WALL_MIN, LIP_W + LIP_CLR + POCKET_D + 2 * RIM_MARGIN)
-PORT_WALL = 2.4    # wall left in front of the SMA / USB, via outside recesses
+PORT_WALL = 2.4    # wall left in front of the USB, via an outside recess
 SMA_RECESS_D = 12.0                    # room for the antenna plug's coupling nut
 USB_RECESS_W, USB_RECESS_H = 16.0, 10.0
 
@@ -94,14 +98,16 @@ sma_cut = (cq.Workplane("YZ").workplane(offset=ox0 - 1).center(SMA_Y, SMA_Z)
            .circle(SMA_D / 2).extrude(WALL + LIP_W + 3))
 # relief for the square flange where it overhangs the board edge
 _fh = SMA_FLANGE / 2 + SMA_FLANGE_CLR
-sma_pocket = rbox(-1.0, SMA_Y - _fh, 1.2, 2 * _fh, SMA_Z - _fh, SMA_Z + _fh)
+_fx = -(SMA_PROUD + SMA_FLANGE_GAP)                  # flange pocket reaches this far out
+sma_pocket = rbox(_fx, SMA_Y - _fh, 0.2 - _fx, 2 * _fh, SMA_Z - _fh, SMA_Z + _fh)
 usb_cut = (cq.Workplane("XZ").workplane(offset=-(BL + GAP - 1.5))
            .center(USB_X, USB_Z).rect(USB_W, USB_H).extrude(-(WALL + LIP_W + 4))
            .edges("|Y").fillet(1.5))
-# outside recesses thin the thick rim back to PORT_WALL in front of each port,
+# outside recesses thin the thick rim in front of each port (SMA_PLATE / PORT_WALL),
 # so the SMA thread still sticks out and a USB plug reaches its receptacle
+_sx = _fx - SMA_PLATE                                # outside recess face for the SMA
 sma_recess = (cq.Workplane("YZ").workplane(offset=ox0 - 1).center(SMA_Y, SMA_Z)
-              .circle(SMA_RECESS_D / 2).extrude(WALL - PORT_WALL + 1))
+              .circle(SMA_RECESS_D / 2).extrude(_sx - (ox0 - 1)))
 usb_recess = (cq.Workplane("XZ").workplane(offset=-(oy0 + ol + 1))
               .center(USB_X, USB_Z).rect(USB_RECESS_W, USB_RECESS_H)
               .extrude(WALL - PORT_WALL + 1).edges("|Y").fillet(2.0))
@@ -115,7 +121,7 @@ base = base.union(lip_ring(0.0))
 POST = 4.0
 for (px, py) in [(0, 0), (BW - POST, 0), (0, BL - POST), (BW - POST, BL - POST)]:
     base = base.union(rbox(px, py, POST, POST, FLOOR_TOP - 0.1, 0.0))
-# mid-span posts on front/back edges stop the board flexing when the knob is pushed
+# mid-span posts on front/back edges stop the board flexing
 for (px, py) in [(BW / 2 - 2, 0), (BW / 2 - 2, BL - 3)]:
     base = base.union(rbox(px, py, 4.0, 3.0, FLOOR_TOP - 0.1, 0.0))
 base = base.cut(ports)
@@ -136,9 +142,6 @@ for (px, py) in [(0.4, 0.4), (BW - PIN - 0.4, 0.4), (0.4, BL - PIN - 0.4),
                  (BW - PIN - 0.4, BL - PIN - 0.4)]:
     lid = lid.union(rbox(px, py, PIN, PIN, SPLIT + 0.05, CEIL + 0.1))
 lid = lid.cut(ports)
-# encoder shaft hole (top stays flat so the lid prints face-down)
-lid = lid.cut(cq.Workplane("XY").workplane(offset=CEIL - 1).center(ENC_X, ENC_Y)
-              .circle(3.6).extrude(TOP + 3))
 
 # engraved labels (0.6 mm deep)
 def engrave_top(body, text, x, y, size):
@@ -148,7 +151,6 @@ def engrave_top(body, text, x, y, size):
 
 lid = engrave_top(lid, "TAYLOE SDR", 26, 20, 6.0)
 lid = engrave_top(lid, "MAHJOUB'S STUDIO", 26, 12, 3.2)
-lid = engrave_top(lid, "TUNE", ENC_X, ENC_Y - 13, 3.2)
 def engrave_side(body, text, origin, xdir, normal):
     pl = cq.Plane(origin=origin, xDir=xdir, normal=normal)
     t = cq.Workplane(pl).text(text, 3.2, -0.6, kind="bold",
@@ -183,26 +185,10 @@ for name, solid, pk in (("base", base_solid, base_pk), ("lid", lid_solid, lid_pk
     print(f"{name}: min wall around recesses {w:.2f} mm"
           + ("" if w >= RIM_MARGIN - 1e-6 else f"  WARNING: < {RIM_MARGIN} mm"))
 
-# ---------------- knob (6 mm D-shaft, flat at 4.5 mm) --------------------------
-KNOB_D, KNOB_H = 20.0, 12.0
-kz0 = z_top + 1.4                           # clearance above the lid
-knob = (cq.Workplane("XY").workplane(offset=kz0).center(ENC_X, ENC_Y)
-        .polygon(30, KNOB_D).extrude(KNOB_H).edges(">Z").fillet(1.5))
-bore_depth = min(SHAFT_TOP - kz0 + 0.3, KNOB_H - 2.5)
-bore = (cq.Workplane("XY").workplane(offset=kz0 - 0.1).center(ENC_X, ENC_Y)
-        .circle(3.05).extrude(bore_depth + 0.1))
-flat_keep = (cq.Workplane("XY").workplane(offset=kz0 - 0.2)
-             .center(ENC_X, ENC_Y + 4.55 - 3.05 - 5.0).rect(14, 10)
-             .extrude(bore_depth + 1))
-knob = knob.cut(bore.intersect(flat_keep))
-knob = knob.cut(cq.Workplane("XY").workplane(offset=kz0 + KNOB_H - 0.8)
-                .center(ENC_X, ENC_Y + KNOB_D / 2 - 3.5).rect(1.2, 5).extrude(2))
-
 # ---------------- export -------------------------------------------------------
 cq.exporters.export(base, f"{OUT}/enclosure_base.step")
 cq.exporters.export(lid, f"{OUT}/enclosure_lid.step")
-cq.exporters.export(knob, f"{OUT}/knob.step")
-for name, part in (("enclosure_base", base), ("enclosure_lid", lid), ("knob", knob)):
+for name, part in (("enclosure_base", base), ("enclosure_lid", lid)):
     cq.exporters.export(part, f"{OUT}/{name}.stl", tolerance=0.02, angularTolerance=0.1)
 
 # print-ready copies: each part on its flat face, resting on Z = 0
@@ -214,8 +200,7 @@ def on_bed(part, bottom, flip=False):
         part = part.rotate((0, 0, 0), (1, 0, 0), 180)
         bottom = -bottom
     return part.translate((0, 0, -bottom))
-for name, part in (("base", on_bed(base, z_bot)), ("lid", on_bed(lid, z_top, flip=True)),
-                   ("knob", on_bed(knob, kz0))):
+for name, part in (("base", on_bed(base, z_bot)), ("lid", on_bed(lid, z_top, flip=True))):
     # finer meshes make the engraved lettering self-intersect more, not less
     cq.exporters.export(part, f"{OUT}/print/{name}.stl", tolerance=0.02, angularTolerance=0.1)
     cq.exporters.export(part, f"{OUT}/print/{name}.3mf", tolerance=0.02, angularTolerance=0.1)
@@ -226,9 +211,7 @@ asm = cq.Assembly(name="tayloe_sdr_enclosure")
 asm.add(board, name="pcb")
 asm.add(base, name="base", color=cq.Color(0.20, 0.22, 0.25))
 asm.add(lid, name="lid", color=cq.Color(0.20, 0.22, 0.25, 0.35))
-asm.add(knob, name="knob", color=cq.Color(0.85, 0.35, 0.10))
 asm.save(f"{OUT}/tayloe_sdr_enclosure_assembly.step")
 
 bb = base.union(lid).val().BoundingBox()
 print(f"outer {bb.xlen:.1f} x {bb.ylen:.1f} x {bb.zlen:.1f} mm")
-print("knob bore depth", round(bore_depth, 2), "kz0", kz0)

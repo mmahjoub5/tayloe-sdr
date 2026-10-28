@@ -16,7 +16,6 @@ BOARD = os.path.join(os.getcwd(), "..", "radio-project", "radio-project.step")
 STYLE = {  # label: (rgb, transparency %)
     "enclosure_base": ((0.20, 0.22, 0.25), 0),
     "enclosure_lid": ((0.20, 0.22, 0.25), 70),
-    "knob": ((0.85, 0.35, 0.10), 0),
 }
 
 doc = FreeCAD.newDocument("enclosure")

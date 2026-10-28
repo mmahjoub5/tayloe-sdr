@@ -1,6 +1,6 @@
 # meche — 3D-printed enclosure
 
-Two-piece enclosure (base + lid) and tuning knob for the Tayloe SDR board,
+Two-piece enclosure (base + lid) for the Tayloe SDR board,
 generated from code. The board drops into the base, the lid closes over it at
 the board's top surface, and snaps shut on neodymium magnets pressed into
 both rims.
@@ -45,8 +45,8 @@ up hidden inside an opaque box.
 
 | File | Use |
 |---|---|
-| `out/print/{base,lid,knob}.{stl,3mf,step}` | **Send these to the printer.** Already oriented flat on the bed at Z = 0 |
-| `out/enclosure_{base,lid}.step`, `out/knob.step` | Parts in board coordinates, for CAD |
+| `out/print/{base,lid}.{stl,3mf,step}` | **Send these to the printer.** Already oriented flat on the bed at Z = 0 |
+| `out/enclosure_{base,lid}.step` | Parts in board coordinates, for CAD |
 | `out/tayloe_sdr_enclosure_assembly.step` | Board + all parts assembled |
 | `out/enclosure.FCStd` | Same assembly for FreeCAD; lid 70 % transparent |
 
@@ -75,7 +75,6 @@ copy somewhere else.
 |---|---|---|
 | base | bottom down | none |
 | lid | flipped, top face down (engraving on the bed) | none |
-| knob | flat bottom down, shaft bore facing the bed | none |
 
 PETG or PLA, 0.2 mm layers, 3 walls. Prefer `lid.step` if your slicer takes
 STEP (PrusaSlicer, Bambu Studio, OrcaSlicer): the lid STL has ~100 tiny
@@ -112,15 +111,15 @@ All dimensions are in mm, at the top of `cad/enclosure.py`:
 |---|---|---|
 | `LIP_CLR` | 0.3 | lid is loose on the base → 0.2 |
 | `SMA_CLR` / `SMA_FLANGE_CLR` | 0.45 / 0.5 | SMA connector is tight in its hole |
+| `SMA_PROUD` | 2.0 | measure how far your soldered SMA's square flange sits past the board edge; the case fits up to ~0.3 mm beyond this |
 | `MAGNET_D`, `MAGNET_T`, `MAGNET_FIT` | 6 / 2 / 0.2 | different magnets, or the press fit is too tight/loose; the walls resize automatically |
 | `MAGNET_LAYOUT` | `"corners"` | `"sides"` for 2 magnets per half, mid-span left/right |
 | `R_OUT` | 3.0 | rounder corners (keep ≤ 3.9 with corner magnets; the build warns if a wall gets thin) |
-| `KNOB_D`, `KNOB_H` | 20 / 12 | different knob size |
 | `WALL_MIN`, `TOP`, `FLOOR` | 2.4 / 2.0 / 2.0 | stiffer or lighter shell (`WALL` itself follows the magnet size) |
 | `USB_W`, `USB_H` | 12.6 / 7.0 | your USB-C plug housing doesn't fit |
 
 Lid text is set near the end of the lid section (`engrave_top(...)` lines).
-The knob bore assumes a 6 mm D-shaft with the flat at 4.5 mm — check your
-encoder's datasheet.
+The board is built without the rotary encoder: the lid has no shaft opening,
+and the encoder in `radio-project.step` will show as an overlap with the lid.
 
 After any change, rebuild and look at the assembly in FreeCAD before printing.
