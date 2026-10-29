@@ -4,25 +4,36 @@ import time
 
 import numpy as np
 import serial
+from serial.tools import list_ports
 
-DEFAULT_PORT = "/dev/cu.usbmodem1101"
+from .hardware import (
+    FULL_SCALE,
+    MAX_CAPTURE,
+    OFFSET_HZ,
+    STREAM_CHUNK_S,
+    STREAM_DECIM,
+    TAYLOE_DIV,
+    XTAL_CORR_PPB,
+)
 
-TAYLOE_DIV = 4              # the detector divides the LO by four for quadrature
-OFFSET_HZ = 3000.0          # park carriers here, clear of the board's DC offset
-#
-# Why you might want this larger: at 3 kHz a 5 kHz-wide channel spans -2 to
-# +8 kHz, so DC sits *inside* it -- amplifier offset, LO self-mixing and 1/f
-# noise all land in the passband where no channel filter can remove them. The
-# I channel's DC offset on this board is about a quarter of peak amplitude.
-# A larger offset moves the channel clear of DC and puts the I/Q image far
-# enough away to be filtered.
-#
-# The ceiling is the streamed bandwidth: offset + bw/2 must stay inside
-# rate/2. At ADC_DECIM 2 (24 kHz) that caps the offset near 9 kHz; reaching
-# 15 kHz needs ADC_DECIM 1.
-FULL_SCALE = 1 << 23        # 24-bit samples -> roughly +/-1.0
-MAX_CAPTURE = 8192          # ADC_MAX_CAPTURE in audio_adc.h
-STREAM_CHUNK_S = 120        # the firmware's per-stream limit
+# None means find the board by USB ID, since macOS names the port after the
+# hub socket it is plugged into (usbmodem101, usbmodem1101, ...).
+DEFAULT_PORT = None
+RP2040_VID = 0x2E8A
+
+
+def find_port():
+    """Find the serial port of the board's RP2040.
+
+    Returns:
+        str: device path, e.g. "/dev/cu.usbmodem101".
+    """
+    found = [p.device for p in list_ports.comports() if p.vid == RP2040_VID]
+    # macOS lists each port twice; the cu. node doesn't wait for carrier detect.
+    found = sorted(found, key=lambda d: "/cu." not in d)
+    if not found:
+        raise serial.SerialException("no RP2040 board found on USB; is it plugged in?")
+    return found[0]
 
 
 def to_complex(raw, swap=True, scale=FULL_SCALE):
@@ -51,14 +62,17 @@ class RadioBoard:
     """One serial connection to the board, plus the protocol on top of it."""
 
     def __init__(self, port=DEFAULT_PORT, baud=115200, timeout=1.0, swap=True,
-                 offset=OFFSET_HZ):
-        self.ser = serial.Serial(port, baud, timeout=timeout)
+                 offset=OFFSET_HZ, corr=XTAL_CORR_PPB, decim=STREAM_DECIM):
+        self.ser = serial.Serial(port or find_port(), baud, timeout=timeout)
         self.swap = swap
+        # stream() sample rate is CAPTURE_RATE / decim: 2 gives 24 kHz (the
+        # firmware sums pairs, so the outer half aliases), 1 the full 48 kHz.
+        self.decim = int(decim)
         # Kept on the instance so tuning and demodulation cannot disagree about
         # where the carrier was placed.
         self.offset = float(offset)
-        self._pending_tune = None
-        self._tuned_to = None
+        self.corr = int(corr)
+        self._corr_applied = False
         time.sleep(0.3)
 
     def __enter__(self):
@@ -81,39 +95,32 @@ class RadioBoard:
         return self.ser.read(self.ser.in_waiting or 1).decode(errors="replace").strip()
 
     def start_adc(self, rate=None):
+        # The crystal correction has to go in before the ADC starts: init()
+        # resets the chip, which would stop SCKI and stall the capture.
+        if self.corr and not self._corr_applied:
+            self.command(f"init 8 {self.corr}", wait=1.0)
+            self._corr_applied = True
         return self.command(f"adc start {int(rate)}" if rate else "adc start",
                             wait=0.6)
 
     def stop_adc(self):
         return self.command("adc stop")
 
-    def request_tune(self, hz):
-        """Queue a retune to be applied at a clean stream boundary.
-
-        Retuning cannot happen from outside the stream loop: the generator is
-        suspended mid-transfer and would resume reading the CLI's ASCII reply
-        as if it were samples. Queuing lets the generator abort, retune and
-        restart while it still owns the port.
-
-        Returns False if already on that frequency -- each retune costs about a
-        second of audio, so no-ops are worth skipping.
-        """
-        if self._tuned_to is not None and float(hz) == self._tuned_to:
-            return False
-        self._pending_tune = float(hz)
-        return True
-
     def tune(self, hz, offset=None):
         """Place the wanted carrier at +offset rather than at DC.
 
         The board's DC offset would otherwise sit exactly where the carrier is.
-        Uses the board's configured offset unless one is given here. Returns
-        the LO frequency actually requested.
+        Giving an offset here changes the board's configured one, so later
+        tunes keep it -- the offset is part of where the board is tuned, not a
+        one-off. Returns the LO frequency actually requested.
+
+        Not callable while a stream is open: the port is mid-transfer. Close
+        the stream generator first; it aborts the transfer on the way out.
         """
-        offset = self.offset if offset is None else float(offset)
-        lo = (hz - offset) * TAYLOE_DIV
+        if offset is not None:
+            self.offset = float(offset)
+        lo = (hz - self.offset) * TAYLOE_DIV
         self.command(f"clk 1 {int(lo)}", wait=0.15)
-        self._tuned_to = float(hz)
         return lo
 
     # ---- bulk transfers -----------------------------------------------
@@ -152,9 +159,8 @@ class RadioBoard:
     def abort_stream(self):
         """Stop an in-progress stream so the CLI accepts commands again.
 
-        The firmware aborts on any received byte. Reads then time out, the
-        generator's inner loop ends, and the next chunk is re-issued -- which
-        is how retuning works without tearing the connection down.
+        The firmware aborts on any received byte. stream() calls this itself
+        when it is closed early, so callers normally never need to.
         """
         self.ser.write(b"\n")
         time.sleep(0.05)
@@ -169,6 +175,12 @@ class RadioBoard:
 
         A generator so both consumers can share it: one accumulates the blocks
         into a recording, the other publishes each as it arrives.
+
+        To stop early -- e.g. to retune -- close it, ideally via
+        contextlib.closing(). Closing mid-transfer aborts the firmware's stream
+        so the CLI is ready for the next command. Just breaking out of a for
+        loop is not enough: the generator then lingers until garbage
+        collection, still owning a busy port.
         """
         remaining = seconds
         leftover = b""
@@ -179,31 +191,28 @@ class RadioBoard:
                 return
 
             self.ser.reset_input_buffer()
-            self.ser.write(f"adc stream {int(max(1, chunk))}\n".encode())
+            self.ser.write(f"adc stream {int(max(1, chunk))} {self.decim}\n".encode())
             frames, rate = self._read_header(b"STREAM")
 
             want = frames * 8
             got = 0
-            while got < want:
-                raw = self.ser.read(min(block_frames * 8, want - got))
-                if not raw:
-                    break                      # board stopped early
-                got += len(raw)
+            done = False
+            try:
+                while got < want:
+                    raw = self.ser.read(min(block_frames * 8, want - got))
+                    if not raw:
+                        break                  # board stopped early
+                    got += len(raw)
 
-                iq, leftover = to_complex(leftover + raw, self.swap)
-                if len(iq):
-                    yield iq, rate
-
-                if self._pending_tune is not None:
-                    break
-
-            # Applied here, between chunks, where nothing else is mid-read.
-            if self._pending_tune is not None:
-                self.abort_stream()
-                self.tune(self._pending_tune)
-                self._pending_tune = None
-                leftover = b""
-                continue
+                    iq, leftover = to_complex(leftover + raw, self.swap)
+                    if len(iq):
+                        yield iq, rate
+                done = True
+            finally:
+                # Only when closed mid-chunk: a finished chunk has nothing to
+                # abort, and a stray byte there would just be noise to the CLI.
+                if not done:
+                    self.abort_stream()
 
             if remaining is not None:
                 remaining -= chunk

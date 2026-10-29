@@ -3,11 +3,20 @@ name = "radiolib"
 version = "0.1.0"
 description = "Host-side library for the Tayloe receiver board"
 requires-python = ">=3.9"
-dependencies = ["numpy", "pyserial", "scipy"]
+dependencies = ["ldpc", "numpy", "pyserial", "scipy"]
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["radiolib"]
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["radiolib*"]
+
+[tool.setuptools.package-data]
+radiolib = ["ft8/*.dat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

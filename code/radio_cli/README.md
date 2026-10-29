@@ -28,7 +28,7 @@ from Si5351 **CLK0** at 256·fs — nothing downstream runs until that clock doe
 | `adc stop` | stop capture and SCKI |
 | `adc read [frames]` | read frames, report min/max per channel (1..4096, default 256) |
 | `adc capture [frames]` | binary I/Q dump for the host (1..8192, default 4096) |
-| `adc stream [secs]` | continuous decimated I/Q (1..120 s, default 5) |
+| `adc stream [secs] [decim]` | continuous I/Q (1..120 s, default 5); `decim` 2 = 24 kHz (default), 1 = full 48 kHz |
 
 ## Pin map
 
@@ -53,7 +53,7 @@ little-endian **int32** I/Q pairs (24-bit samples, not scaled down):
 
 ```
 CAPTURE <frames> <rate>      # adc capture
-STREAM  <frames> <rate>      # adc stream, rate is decimated by 2
+STREAM  <frames> <rate>      # adc stream, rate is 48000 / decim
 ```
 
 ## Typical session

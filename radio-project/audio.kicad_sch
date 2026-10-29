@@ -4965,7 +4965,7 @@
 				)
 			)
 		)
-		(property "Footprint" "PW14"
+		(property "Footprint" "Package_SO:TSSOP-14_4.4x5mm_P0.65mm"
 			(at 109.22 66.04 0)
 			(hide yes)
 			(show_name no)
