@@ -170,7 +170,7 @@ uint16_t AudioAdc::captureRaw(int32_t *dst, uint16_t frames, uint32_t timeoutMs)
   return got;
 }
 
-uint32_t AudioAdc::streamRaw(uint32_t frames, uint32_t timeoutMs)
+uint32_t AudioAdc::streamRaw(uint32_t frames, uint8_t decim, uint32_t timeoutMs)
 {
   if (!started) {
     return 0;
@@ -192,8 +192,8 @@ uint32_t AudioAdc::streamRaw(uint32_t frames, uint32_t timeoutMs)
       accI += (int32_t)(pio_sm_get(pio, sm) << 8) >> 8;
       accQ += (int32_t)(pio_sm_get(pio, sm) << 8) >> 8;
 
-      if (++n == ADC_DECIM) {
-        int32_t out[2] = { accI / ADC_DECIM, accQ / ADC_DECIM };
+      if (++n == decim) {
+        int32_t out[2] = { accI / decim, accQ / decim };
         Serial.write((const uint8_t *)out, sizeof(out));
         accI = accQ = 0;
         n = 0;

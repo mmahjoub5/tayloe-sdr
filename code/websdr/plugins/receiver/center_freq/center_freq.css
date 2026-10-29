@@ -1,0 +1,50 @@
+/* center_freq plugin: "Center MHz" row under the profile selector. */
+
+.openwebrx-center-freq-form {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+}
+
+.openwebrx-center-freq-form label {
+    flex: none;
+    font-size: 10pt;
+    white-space: nowrap;
+}
+
+/* Colors, gradient and radius come from ".openwebrx-panel input". */
+#openwebrx-center-freq-input {
+    flex: 1;
+    min-width: 0;
+    height: 27px;
+    box-sizing: border-box;
+    padding: 0 5px;
+    font-size: 10pt;
+    font-family: inherit;
+}
+
+/* Look comes from ".openwebrx-button"; reset native <button> chrome. */
+.openwebrx-center-freq-form .openwebrx-button {
+    flex: none;
+    height: 27px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border: 0;
+    font-family: inherit;
+    font-size: 10pt;
+    line-height: 27px;
+}
+
+.openwebrx-center-freq-status {
+    font-size: 9pt;
+    min-height: 0;
+}
+
+.openwebrx-center-freq-status:not(:empty) {
+    padding-top: 3px;
+}
+
+.openwebrx-center-freq-status.error {
+    color: #ff5939;
+}

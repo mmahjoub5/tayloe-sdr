@@ -33,8 +33,10 @@
 // which a 250 ms read would otherwise be racing.
 #define ADC_SETTLE_FRAMES 8960
 
-// Streaming decimates by this much before sending. 48 kHz / 2 = 24 kHz keeps
-// +/-12 kHz of baseband at about 192 KB/s.
+// Streaming decimates by this much before sending, unless `adc stream` asks
+// for another factor. 48 kHz / 2 = 24 kHz keeps +/-12 kHz of baseband at about
+// 192 KB/s; a factor of 1 sends the full 48 kHz (384 KB/s), which a waterfall
+// wants because the boxcar below lets the outer half fold back in.
 //
 // The decimator is a plain sum of ADC_DECIM samples. A boxcar of length N
 // decimated by N nulls the frequencies that fold to DC, but its stopband is
@@ -46,6 +48,7 @@
 // sharp filter on the host can actually remove it. Aliasing is irreversible;
 // bandwidth is only bandwidth.
 #define ADC_DECIM 2
+#define ADC_DECIM_MAX 2
 
 enum class AdcStart {
   Ok,
@@ -90,12 +93,13 @@ public:
   // instead of only tracking min/max. Returns the frames actually stored.
   uint16_t captureRaw(int32_t *dst, uint16_t frames, uint32_t timeoutMs = 500);
 
-  // Decimate by ADC_DECIM and write straight to Serial for `frames` output
+  // Decimate by `decim` and write straight to Serial for `frames` output
   // frames. Nothing is buffered, so this runs for as long as asked without
   // needing RAM proportional to the duration. Returns frames actually sent.
-  uint32_t streamRaw(uint32_t frames, uint32_t timeoutMs = 2000);
+  uint32_t streamRaw(uint32_t frames, uint8_t decim = ADC_DECIM,
+                     uint32_t timeoutMs = 2000);
 
-  uint32_t streamRate() const { return sampleRate / ADC_DECIM; }
+  uint32_t streamRate(uint8_t decim = ADC_DECIM) const { return sampleRate / decim; }
 
 private:
   Si5351Board *clkSrc = nullptr;

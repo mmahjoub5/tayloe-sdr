@@ -1,0 +1,13 @@
+[Unit]
+Description=RP2040 Tayloe board as an rtl_tcp server for OpenWebRX
+After=network.target
+Before=openwebrx.service
+
+[Service]
+User=pi
+ExecStart=/opt/rp2040-bridge/venv/bin/python /opt/rp2040-bridge/rp2040_rtltcp_bridge.py --decim 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

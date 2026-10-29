@@ -42,7 +42,7 @@ static void cmdHelp()
   Serial.println("  adc stop             stop capture and scki");
   Serial.println("  adc read [frames]    read frames, report min/max per channel");
   Serial.println("  adc capture [frames] binary I/Q dump for the host");
-  Serial.println("  adc stream [secs]    continuous decimated I/Q, any length");
+  Serial.println("  adc stream [secs] [decim]  continuous I/Q; decim 1 (48k) or 2 (24k)");
 }
 
 static void cmdGpio(const char *arg)
@@ -271,7 +271,7 @@ static void cmdInit(const char *pfTok, const char *corrTok)
   Serial.println(board.begin(load, 25000000, corr) ? "init ok" : "init failed");
 }
 
-static void cmdAdc(const char *sub, const char *arg)
+static void cmdAdc(const char *sub, const char *arg, const char *arg2)
 {
   if (sub == nullptr) {
     Serial.println("usage: adc start|stop|read");
@@ -352,14 +352,20 @@ static void cmdAdc(const char *sub, const char *arg)
       return;
     }
 
-    uint32_t frames = (uint32_t)secs * adc.streamRate();
+    long decim = ADC_DECIM;
+    if (arg2 != nullptr && (!parseNum(arg2, &decim) || decim < 1 || decim > ADC_DECIM_MAX)) {
+      Serial.println("decim must be 1 or 2");
+      return;
+    }
+
+    uint32_t frames = (uint32_t)secs * adc.streamRate(decim);
     Serial.print("STREAM ");
     Serial.print(frames);
     Serial.print(" ");
-    Serial.println(adc.streamRate());
+    Serial.println(adc.streamRate(decim));
     Serial.flush();
 
-    adc.streamRaw(frames);
+    adc.streamRaw(frames, decim);
     Serial.flush();
     return;
   }
@@ -411,6 +417,7 @@ void handleLine(char *line)
 
   char *a1 = strtok(nullptr, " \t");
   char *a2 = strtok(nullptr, " \t");
+  char *a3 = strtok(nullptr, " \t");
 
   if (strcasecmp(cmd, "help") == 0) {
     cmdHelp();
@@ -431,7 +438,7 @@ void handleLine(char *line)
   } else if (strcasecmp(cmd, "init") == 0) {
     cmdInit(a1, a2);
   } else if (strcasecmp(cmd, "adc") == 0) {
-    cmdAdc(a1, a2);
+    cmdAdc(a1, a2, a3);
   } else if (strcasecmp(cmd, "reset") == 0) {
     board.resetPlls();
     Serial.println("plls reset");
