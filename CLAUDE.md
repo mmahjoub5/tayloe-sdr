@@ -36,6 +36,13 @@ A standalone script that writes one 15 s FT8 slot (signal starting 0.5 s in) as 
 
 The WAV plays from when the flowgraph starts, not on a UTC slot boundary. That doesn't matter for our own decoder, which searches for the start time. WSJT-X or another station needs the start within about ±2 s of :00/:15/:30/:45.
 
+## GNU Radio flowgraphs
+
+Write and edit `.grc` files with the `grc-maker` skill (house style, chains, headless rules, a renderer that checks
+the layout). The board SSB flowgraphs (`board/ssb_receiver.grc`, `ft8_receiver.grc`) demodulate **LSB only**: their
+phasing arms are added, which cancels the upper sideband, so FT8 (USB) comes out mirrored. `websdr/sdr/engine.grc`
+has a `sideband` sign and does both. See `code/CLAUDE.md` TODOs.
+
 ## FT8 RX (`code/gnu-radio/ft8_rx.py`)
 
 A standalone script that works with either receiver. In `board/ssb_receiver.grc` or `rtlsdr/ssb_receiver.grc`, add a stock WAV File Sink beside the Audio Sink (same input and rate) and record. Then:

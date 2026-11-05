@@ -64,8 +64,9 @@ Adds a "Center MHz" input + Go button under the profile dropdown. It sends the s
 - Source of truth: `websdr/plugins/receiver/` in this folder (`init.js`, `center_freq/center_freq.{js,css}`).
 - Installed on the Pi under `/usr/lib/python3/dist-packages/htdocs/plugins/receiver/`. These files are not owned by
   the `openwebrx` package, so `apt upgrade` leaves them alone. Static files: no restart needed after copying.
-- Shown only while the server's `allow_center_freq_changes` is true. Valid input 24–1766 MHz
-  (`CENTER_FREQ_MIN_MHZ` / `CENTER_FREQ_MAX_MHZ` at the top of `center_freq.js`).
+- Shown only while the server's `allow_center_freq_changes` is true. Valid input depends on the selected SDR (the
+  `sdr_id` in the server's config): `rtlsdr` 24–1766 MHz, `tayloe` 0.1–30 MHz, anything else unlimited
+  (`CENTER_FREQ_LIMITS_MHZ` at the top of `center_freq.js`; add an entry when adding an SDR).
 - Tracks the shared center (profile switches, other users' retunes). Shows "Not retuned: the server refused it" if no
   matching `center_freq` update arrives within 3 s (usually a missing or wrong `#key`).
 - Hooks the global `on_ws_recv` (observe only). It must load before the page opens its WebSocket to see the allow
@@ -92,6 +93,9 @@ ssh pi@10.0.0.216 'sudo rm -rf /usr/lib/python3/dist-packages/htdocs/plugins/rec
 The RP2040 Tayloe board shows up in OpenWebRX as device "Tayloe board (RP2040)", type "RTL-SDR device (via rtl_tcp)",
 `remote: 127.0.0.1:1234`. A bridge pretends to be an rtl_tcp server, so OpenWebRX needs no changes.
 
+Superseded by our own WebSDR (below): `rp2040-rtltcp` is disabled on the Pi. Re-enable it (and stop the Docker
+bridge) to use the board in OpenWebRX again.
+
 - Source of truth: `websdr/rp2040_rtltcp_bridge.py` and `websdr/rp2040-rtltcp.service` in this folder. Uses
   `radiolib.RadioBoard` (port found by USB ID, `find_port()`).
 - On the Pi: `/opt/rp2040-bridge/` holds the script, a copy of `radiolib/` and a venv (`--system-site-packages`;
@@ -99,25 +103,30 @@ The RP2040 Tayloe board shows up in OpenWebRX as device "Tayloe board (RP2040)",
   board on `/dev/ttyACM0`. Logs: `sudo journalctl -u rp2040-rtltcp -f`.
 - Runs at `--decim 2` (24 kHz). The Pi 3B+ can't read the board at 48 kHz (see TODOs).
 - rtl_tcp: sends the 12-byte `RTL0` header, then unsigned 8-bit I/Q. Handles `0x01` (frequency: retune, debounced
-  0.3 s, ~1 s gap) and `0x02` (sample rate: warns on mismatch); ignores gain, ppm, AGC, bias-tee. Accepts one client
+  0.3 s, ~1 s gap), `0x02` (sample rate: warns on mismatch), `0x03`/`0x04` (gain); ignores ppm, AGC, bias-tee. Accepts one client
   at a time. Reopens the board if it is unplugged.
 - Tunes the LO exactly to the profile's `center_freq` (`tune(hz, offset=0)`), since rtl_tcp can't report an offset.
   The +3 kHz (AM) / +5 kHz (SSB) carrier offset lives in the profiles: `center_freq` 3 or 5 kHz below `start_freq`.
 - A DC blocker (pole 0.999) removes the board's DC offset; `--no-dc-block` turns it off.
-- Digital gain `--gain` (dB, default 46) before 8-bit quantizing. The log prints the peak and % clipped every 10 s.
+- Digital gain before 8-bit quantizing comes from the profile's `rf_gain` (dB), else `--gain` (default 46). Set it per
+  profile: board levels differ by ~40 dB between bands. The log prints the gain, then peak and % clipped every 10 s;
+  aim for 0% clipped. Clipping sounds like a mistuned station. To pick a gain, measure with `capture()` at the
+  profile's center: gain ≈ 20·log10(0.7 / 99.9th-percentile |iq|).
 - Accepts centers 0.1–30 MHz (`--fmin`/`--fmax`); other requests are logged and ignored.
 - Profiles must say `samp_rate: 24000`. The `/settings` form rejects rtl_tcp rates under 250 kHz, so add or edit
   Tayloe profiles in `settings.json` directly (service stopped; backup at `settings.json.bak-before-tayloe`).
 
-| profile | `center_freq` | `start_freq` | `start_mod` |
-|---|---|---|---|
-| `am1170` AM 1170 | 1167000 | 1170000 | am |
-| `40m-ft8` 40m FT8 | 7069000 | 7074000 | usb |
+| profile | `center_freq` | `start_freq` | `start_mod` | `rf_gain` | board rms there |
+|---|---|---|---|---|---|
+| `am1170` AM 1170 | 1167000 | 1170000 | am | 8 | 0.13 of full scale |
+| `40m-ft8` 40m FT8 | 7069000 | 7074000 | usb | 46 | 0.0013 |
 
 - After switching to a Tayloe profile, waterfall and audio take ~10 s to start (connector start + first retune).
 - Known issue: rare isolated sample spikes (logged peaks of 50–100× full scale, <0.1% clipped). Probably the
   zero-margin USB link at 24 kHz; see TODOs.
-- The Center MHz box rejects HF (`CENTER_FREQ_MIN_MHZ` is 24), so it can't retune this device yet.
+
+OpenWebRX test client on the Pi: `python3 ~/bin/owrx_ws_test.py "tayloe|am1170" 30` opens a profile over `/ws/` like
+a browser and counts FFT/audio frames.
 
 Test on the Mac against the board (no OpenWebRX needed): `python websdr/rp2040_rtltcp_bridge.py`, then point any
 rtl_tcp client (SDR++, GQRX) at `127.0.0.1:1234` with the sample rate set to the stream rate.
@@ -133,6 +142,45 @@ ssh pi@10.0.0.216 'cd /opt/rp2040-bridge && rm -rf radiolib && cp -r /tmp/rb/rad
 First install also needs `sudo apt install python3-numpy python3-scipy`, `sudo install -d -o pi -g pi
 /opt/rp2040-bridge`, `python3 -m venv --system-site-packages /opt/rp2040-bridge/venv` and
 `sudo systemctl enable rp2040-rtltcp`.
+
+### Own WebSDR (`websdr/sdr/`)
+
+Our own web SDR for the Tayloe board, replacing OpenWebRX for it. On the Pi it runs in Docker on port 8090
+(`http://10.0.0.216:8090/#key=memagic`, diagnostics at `/diag.html`). `PROTOCOL.md` there is the contract between
+the parts; `DOCKER.md` has the build and deploy steps.
+
+```
+board ─USB─▶ iq_bridge.py ─ZMQ :5555─▶ engine.grc ─ZMQ :5560 waterfall / :5561 audio─▶ server.py ─WS /ws─▶ page
+                  ▲ :5556 tune ◀── Board Tuner     ▲ XML-RPC :8080 (set_/get_ center, offset, mode, volume)
+```
+
+- `engine.grc`: headless GNU Radio flowgraph (grc-maker skill). Board Tuner → waterfall (`logpwrfft_x`, ~12 rows/s,
+  -120..-20 dB → 0–255) and two demods running side by side: AM (slow AGC, `am_demod_cf`) and SSB phasing (AGC,
+  delay 127 / Hilbert 255). A selector picks one; audio goes out at 12 kHz int16.
+- **USB and LSB are both in `engine.grc`.** The phasing arms meet at an Add, which on its own gives LSB
+  (`real + H(imag)` cancels the upper sideband). The Multiply Const before it is `sideband`: -1 in USB (the default,
+  so the render shows -1), +1 in LSB. Verified with synthetic I/Q: 63–68 dB opposite-sideband rejection.
+- **The older `gnu-radio/board/ssb_receiver.grc` and `ft8_receiver.grc` are LSB only** (Add, no sign flip). Right for
+  40 m voice, wrong for FT8 (USB); see TODOs.
+- `center` is the LO (middle of the waterfall; setting it retunes the board, ~1 s gap), `offset` is the station
+  relative to it (instant). Station = center + offset. The Board Tuner sends `center 0` to the bridge and repeats it
+  every 3 s, so a restarted bridge comes back tuned.
+- `server.py`: FastAPI, never imports gnuradio. Serves `static/`, relays ZMQ to every WebSocket with a type byte
+  (1 waterfall, 2 audio), turns `{"set": ...}` messages into XML-RPC calls (`CONTROLS` allowlist, `--key` /
+  `$SDR_KEY` needed to tune), `GET /api/diag` from `diag.py` (CPU, memory, temperature, throttling, Wi-Fi,
+  processes; 2 s samples, 30 min kept).
+- `static/`: the radio page (`index.html`, `app.js`, `audio-worklet.js`, `style.css`) and `diag.html`.
+- `fake_engine.py`: pure-Python stand-in for the engine, for page work without GNU Radio.
+
+Mac (from `websdr/sdr/`, `conda activate gr`; needs fastapi uvicorn websockets pyzmq psutil):
+
+    ./run.sh --key memagic                 # bridge + engine (built from engine.grc) + server, board plugged in
+    python fake_engine.py & python server.py --key memagic     # no board, no GNU Radio
+    python -m pytest tests/
+
+Pi (Docker; image built on the Pi, see `DOCKER.md`): `cd ~/websdr && docker compose up -d`, logs with
+`docker compose logs -f bridge|engine|server`. `rp2040-rtltcp` is disabled, since only one program can open the
+board. OpenWebRX keeps the RTL dongle (it was stopped during the first deploy; still enabled at boot).
 
 ### SDR hardware
 
@@ -159,13 +207,18 @@ First install also needs `sudo apt install python3-numpy python3-scipy`, `sudo i
 6. Tayloe board added through the rtl_tcp bridge (24 kHz). Tested on the Mac (AM 1170 carrier at +2999 Hz, 58 dB
    over the floor) and through OpenWebRX on the Pi (profile loads, FFT and audio frames flow).
 
-Not done yet: Center MHz box for HF, Wi-Fi power-save off and hardware watchdog, public access via cloudflared, router
+Not done yet: Wi-Fi power-save off and hardware watchdog, public access via cloudflared, router
 DHCP reservation.
 
 ## TODOs
 
-- **Center MHz box for HF**: lower `CENTER_FREQ_MIN_MHZ` (24) in `websdr/plugins/receiver/center_freq/center_freq.js`,
-  or make the limits per device, so the Tayloe board can be retuned from it.
+- **LSB-only board flowgraphs:** `gnu-radio/board/ssb_receiver.grc` and `ft8_receiver.grc` add the phasing arms, which
+  gives LSB, so `ft8_receiver` hears FT8 (USB) mirrored. Fix with a -1 Multiply Const on the Hilbert arm (as in
+  `websdr/sdr/engine.grc`) or a Subtract. Their pasted Board Tuner is also an old copy of `gr_tuner_block.py`.
+- **WebSDR audio batching:** the engine publishes ~190 small audio messages/s and the server forwards each one to every
+  listener; batch to ~50 ms in `server.py` before relying on the Cloudflare link.
+- **RTL-SDR in our WebSDR:** a second engine (`engine_rtl.grc`, gr-osmosdr at ~1.024 MS/s, WFM/NBFM), per-device
+  relays in the server, a device switch in the page. Measure CPU on the Pi first. Lets OpenWebRX go.
 
 - **Firmware: packed 24-bit stream + half-band decimator** (`radio_cli/audio_adc.cpp`, `radiolib/radiolib/board.py`).
   On the Pi 3B+ the board (USB full speed, behind the built-in hub on `dwc_otg`) reads at most ~192 KB/s, measured with

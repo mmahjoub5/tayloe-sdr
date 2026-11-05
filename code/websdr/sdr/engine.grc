@@ -1,0 +1,660 @@
+options:
+  parameters:
+    author: aminmahjoub
+    generate_options: no_gui
+    id: engine
+    output_language: python
+    run_options: run
+    title: WebSDR engine
+    description: Board I/Q in over ZMQ; waterfall and AM/USB/LSB audio out over ZMQ; controls over XML-RPC (PROTOCOL.md)
+  states:
+    coordinate:
+    - 8
+    - 8
+    rotation: 0
+    state: enabled
+blocks:
+- name: samp_rate
+  id: variable
+  parameters:
+    value: '24000'
+    comment: bridge stream rate
+  states:
+    coordinate:
+    - 176
+    - 12
+    rotation: 0
+    state: enabled
+- name: audio_rate
+  id: variable
+  parameters:
+    value: '12000'
+  states:
+    coordinate:
+    - 296
+    - 12
+    rotation: 0
+    state: enabled
+- name: center
+  id: variable
+  parameters:
+    value: '7069000'
+    comment: LO, Hz
+  states:
+    coordinate:
+    - 416
+    - 12
+    rotation: 0
+    state: enabled
+- name: offset
+  id: variable
+  parameters:
+    value: '5000'
+    comment: station - center
+  states:
+    coordinate:
+    - 536
+    - 12
+    rotation: 0
+    state: enabled
+- name: mode
+  id: variable
+  parameters:
+    value: '1'
+    comment: 0 AM, 1 USB, 2 LSB
+  states:
+    coordinate:
+    - 656
+    - 12
+    rotation: 0
+    state: enabled
+- name: volume
+  id: variable
+  parameters:
+    value: '-6'
+    comment: dB
+  states:
+    coordinate:
+    - 776
+    - 12
+    rotation: 0
+    state: enabled
+- name: path
+  id: variable
+  parameters:
+    value: 0 if mode == 0 else 1
+  states:
+    coordinate:
+    - 896
+    - 12
+    rotation: 0
+    state: enabled
+- name: sideband
+  id: variable
+  parameters:
+    value: 1 if mode == 2 else -1
+    comment: -1 USB, +1 LSB
+  states:
+    coordinate:
+    - 1016
+    - 12
+    rotation: 0
+    state: enabled
+- name: fft_size
+  id: variable
+  parameters:
+    value: '1024'
+  states:
+    coordinate:
+    - 176
+    - 100
+    rotation: 0
+    state: enabled
+- name: wf_min
+  id: variable
+  parameters:
+    value: '-120'
+    comment: dB shown as 0
+  states:
+    coordinate:
+    - 296
+    - 100
+    rotation: 0
+    state: enabled
+- name: wf_max
+  id: variable
+  parameters:
+    value: '-20'
+    comment: dB shown as 255
+  states:
+    coordinate:
+    - 416
+    - 100
+    rotation: 0
+    state: enabled
+- name: xmlrpc_server_0
+  id: xmlrpc_server
+  parameters:
+    addr: 127.0.0.1
+    port: '8080'
+    comment: sets center, offset, mode, volume
+  states:
+    coordinate:
+    - 1152
+    - 12
+    rotation: 0
+    state: enabled
+- name: zeromq_sub_source_0
+  id: zeromq_sub_source
+  parameters:
+    address: tcp://127.0.0.1:5555
+    bind: 'False'
+    hwm: '-1'
+    pass_tags: 'False'
+    timeout: '100'
+    type: complex
+    vlen: '1'
+  states:
+    coordinate:
+    - 16
+    - 348
+    rotation: 0
+    state: enabled
+- name: board_tuner
+  id: epy_block
+  parameters:
+    _source_code: |
+      """
+      Embedded Python Blocks:
+
+      Each time this file is saved, GRC will instantiate the first class it finds
+      to get ports and parameters of your block. The arguments to __init__  will
+      be the parameters. All of them are required to have default values!
+      """
+
+      import time
+
+      import numpy as np
+      import zmq
+      from gnuradio import gr
+
+      # Must match CONTROL in iq_bridge.py. Kept as a constant rather than a GRC
+      # parameter: an empty field there generates `endpoint=` and fails to compile,
+      # and a wrong one fails silently, since ZMQ PUB discards messages nobody is
+      # subscribed to.
+      CONTROL = 'tcp://127.0.0.1:5556'
+
+      # Repeat the current request this often, so a bridge that restarted (crash,
+      # board replugged) comes back tuned. The bridge ignores a request for where
+      # it already is, so repeats cost nothing.
+      RESEND_S = 3.0
+
+
+      class blk(gr.sync_block):
+          """Tune the radio board from GRC.
+
+          Samples pass through untouched; the block exists for its `freq` and
+          `offset` parameters, which are forwarded to iq_bridge.py over ZMQ. Wire a
+          QT GUI Range widget to a variable and set freq to that variable -- GRC
+          calls the setter whenever the slider moves.
+
+          Frequencies are the station, not the LO: the bridge applies the Tayloe
+          divide-by-four itself, so 1170e3 means 1170 kHz.
+
+          `offset` is where the bridge parks the station above DC. Set it from the
+          same variable as the Frequency Xlating filter's centre, so the two cannot
+          disagree.
+          """
+
+          def __init__(self, freq=1.17e6, offset=3000.0):
+              """arguments to this function show up as parameters in GRC"""
+              gr.sync_block.__init__(
+                  self,
+                  name='Board Tuner',             # will show up in GRC
+                  in_sig=[np.complex64],
+                  out_sig=[np.complex64]
+              )
+              self._ctx = zmq.Context()
+              self._sock = self._ctx.socket(zmq.PUB)
+              self._sock.connect(CONTROL)
+
+              # PUB silently discards anything sent before the subscriber has
+              # connected, so the first request needs this pause to arrive.
+              time.sleep(0.3)
+
+              # Send the starting point once. The bridge drops a request for where
+              # it already is, so this costs nothing when the two agree -- and when
+              # they do not (say the flowgraph wants a different offset than the
+              # bridge was started with), it is the only thing that fixes it.
+              self._freq = float(freq)
+              self._offset = float(offset)
+              self._send()
+
+          def _send(self):
+              self._sock.send(f"{self._freq} {self._offset}".encode())
+              self._sent = time.time()
+
+          # A property, so GRC registers a callback on the matching parameter name.
+          @property
+          def freq(self):
+              return self._freq
+
+          @freq.setter
+          def freq(self, value):
+              value = float(value)
+              # Retuning costs a second of audio -- the bridge has to abort the
+              # stream, send the command and restart -- so ignore no-op updates.
+              if value != self._freq:
+                  self._freq = value
+                  self._send()
+
+          @property
+          def offset(self):
+              return self._offset
+
+          @offset.setter
+          def offset(self, value):
+              value = float(value)
+              if value != self._offset:
+                  self._offset = value
+                  self._send()
+
+          def work(self, input_items, output_items):
+              output_items[0][:] = input_items[0]
+              if time.time() - self._sent > RESEND_S:
+                  self._send()
+              return len(output_items[0])
+    freq: center
+    offset: '0'
+    comment: LO = center
+  states:
+    coordinate:
+    - 192
+    - 364
+    rotation: 0
+    state: enabled
+- name: logpwrfft_x_0
+  id: logpwrfft_x
+  parameters:
+    type: complex
+    sample_rate: samp_rate
+    fft_size: fft_size
+    ref_scale: '2'
+    frame_rate: '10'
+    average: 'True'
+    avg_alpha: '0.5'
+    shift: 'True'
+  states:
+    coordinate:
+    - 344
+    - 588
+    rotation: 0
+    state: enabled
+- name: blocks_float_to_uchar_0
+  id: blocks_float_to_uchar
+  parameters:
+    vlen: fft_size
+    scale: 255/(wf_max-wf_min)
+    bias: -wf_min*255/(wf_max-wf_min)
+  states:
+    coordinate:
+    - 504
+    - 604
+    rotation: 0
+    state: enabled
+- name: waterfall_out
+  id: zeromq_pub_sink
+  parameters:
+    type: byte
+    vlen: fft_size
+    address: tcp://127.0.0.1:5560
+    bind: 'True'
+    timeout: '100'
+    pass_tags: 'False'
+    hwm: '-1'
+    drop_on_hwm: 'True'
+    key: ''
+  states:
+    coordinate:
+    - 680
+    - 588
+    rotation: 0
+    state: enabled
+- name: am_xlate
+  id: freq_xlating_fir_filter_xxx
+  parameters:
+    type: ccc
+    decim: '1'
+    center_freq: offset
+    samp_rate: samp_rate
+    taps: firdes.low_pass(1, samp_rate, 5000, 1000)
+    comment: AM, ±5 kHz
+  states:
+    coordinate:
+    - 344
+    - 212
+    rotation: 0
+    state: enabled
+- name: am_agc
+  id: analog_agc2_xx
+  parameters:
+    type: complex
+    attack_rate: 1e-3
+    decay_rate: 1e-4
+    reference: '1.0'
+    gain: '1.0'
+    max_gain: 1e6
+    comment: 'slow: follows the carrier'
+  states:
+    coordinate:
+    - 568
+    - 208
+    rotation: 0
+    state: enabled
+- name: analog_am_demod_cf_0
+  id: analog_am_demod_cf
+  parameters:
+    chan_rate: samp_rate
+    audio_decim: '1'
+    audio_pass: '5000'
+    audio_stop: '5500'
+  states:
+    coordinate:
+    - 704
+    - 212
+    rotation: 0
+    state: enabled
+- name: ssb_xlate
+  id: freq_xlating_fir_filter_xxx
+  parameters:
+    type: ccf
+    decim: '1'
+    center_freq: offset
+    samp_rate: samp_rate
+    taps: firdes.low_pass(1, samp_rate, 3000, 500)
+    comment: SSB, ±3 kHz
+  states:
+    coordinate:
+    - 344
+    - 388
+    rotation: 0
+    state: enabled
+- name: ssb_agc
+  id: analog_agc2_xx
+  parameters:
+    type: complex
+    attack_rate: 7e-2
+    decay_rate: 1e-3
+    reference: '0.3'
+    gain: '1.0'
+    max_gain: 1e6
+  states:
+    coordinate:
+    - 568
+    - 384
+    rotation: 0
+    state: enabled
+- name: blocks_complex_to_real_0
+  id: blocks_complex_to_real
+  parameters:
+    vlen: '1'
+  states:
+    coordinate:
+    - 704
+    - 364
+    rotation: 0
+    state: enabled
+- name: blocks_delay_0
+  id: blocks_delay
+  parameters:
+    type: float
+    delay: '127'
+    num_ports: '1'
+    vlen: '1'
+    comment: (hilbert taps - 1) / 2
+  states:
+    coordinate:
+    - 872
+    - 356
+    rotation: 0
+    state: enabled
+- name: blocks_complex_to_imag_0
+  id: blocks_complex_to_imag
+  parameters:
+    vlen: '1'
+  states:
+    coordinate:
+    - 704
+    - 468
+    rotation: 0
+    state: enabled
+- name: hilbert_fc_0
+  id: hilbert_fc
+  parameters:
+    num_taps: '255'
+    win: window.WIN_HAMMING
+    beta: '6.76'
+  states:
+    coordinate:
+    - 872
+    - 460
+    rotation: 0
+    state: enabled
+- name: blocks_complex_to_imag_1
+  id: blocks_complex_to_imag
+  parameters:
+    vlen: '1'
+  states:
+    coordinate:
+    - 1024
+    - 468
+    rotation: 0
+    state: enabled
+- name: blocks_multiply_const_vxx_1
+  id: blocks_multiply_const_vxx
+  parameters:
+    type: float
+    const: sideband
+    vlen: '1'
+  states:
+    coordinate:
+    - 1192
+    - 460
+    rotation: 0
+    state: enabled
+- name: blocks_add_xx_0
+  id: blocks_add_xx
+  parameters:
+    type: float
+    num_inputs: '2'
+    vlen: '1'
+  states:
+    coordinate:
+    - 1360
+    - 388
+    rotation: 0
+    state: enabled
+- name: demod_select
+  id: blocks_selector
+  parameters:
+    type: float
+    num_inputs: '2'
+    num_outputs: '1'
+    input_index: path
+    output_index: '0'
+    enabled: 'True'
+    vlen: '1'
+    showports: 'False'
+  states:
+    coordinate:
+    - 1488
+    - 276
+    rotation: 0
+    state: enabled
+- name: dc_blocker_xx_0
+  id: dc_blocker_xx
+  parameters:
+    type: ff
+    length: '128'
+    long_form: 'True'
+  states:
+    coordinate:
+    - 1648
+    - 332
+    rotation: 0
+    state: enabled
+- name: blocks_multiply_const_vxx_0
+  id: blocks_multiply_const_vxx
+  parameters:
+    type: float
+    const: 10**(volume/20)
+    vlen: '1'
+  states:
+    coordinate:
+    - 1800
+    - 336
+    rotation: 0
+    state: enabled
+- name: rational_resampler_xxx_0
+  id: rational_resampler_xxx
+  parameters:
+    type: fff
+    interp: audio_rate
+    decim: samp_rate
+    taps: '[]'
+    fbw: '0'
+  states:
+    coordinate:
+    - 1992
+    - 320
+    rotation: 0
+    state: enabled
+- name: blocks_float_to_short_0
+  id: blocks_float_to_short
+  parameters:
+    vlen: '1'
+    scale: '32767'
+  states:
+    coordinate:
+    - 2160
+    - 336
+    rotation: 0
+    state: enabled
+- name: audio_out
+  id: zeromq_pub_sink
+  parameters:
+    type: short
+    vlen: '1'
+    address: tcp://127.0.0.1:5561
+    bind: 'True'
+    timeout: '100'
+    pass_tags: 'False'
+    hwm: '-1'
+    drop_on_hwm: 'True'
+    key: ''
+  states:
+    coordinate:
+    - 2320
+    - 320
+    rotation: 0
+    state: enabled
+connections:
+- - zeromq_sub_source_0
+  - '0'
+  - board_tuner
+  - '0'
+- - board_tuner
+  - '0'
+  - logpwrfft_x_0
+  - '0'
+- - logpwrfft_x_0
+  - '0'
+  - blocks_float_to_uchar_0
+  - '0'
+- - blocks_float_to_uchar_0
+  - '0'
+  - waterfall_out
+  - '0'
+- - board_tuner
+  - '0'
+  - am_xlate
+  - '0'
+- - am_xlate
+  - '0'
+  - am_agc
+  - '0'
+- - am_agc
+  - '0'
+  - analog_am_demod_cf_0
+  - '0'
+- - analog_am_demod_cf_0
+  - '0'
+  - demod_select
+  - '0'
+- - board_tuner
+  - '0'
+  - ssb_xlate
+  - '0'
+- - ssb_xlate
+  - '0'
+  - ssb_agc
+  - '0'
+- - ssb_agc
+  - '0'
+  - blocks_complex_to_real_0
+  - '0'
+- - ssb_agc
+  - '0'
+  - blocks_complex_to_imag_0
+  - '0'
+- - blocks_complex_to_real_0
+  - '0'
+  - blocks_delay_0
+  - '0'
+- - blocks_complex_to_imag_0
+  - '0'
+  - hilbert_fc_0
+  - '0'
+- - hilbert_fc_0
+  - '0'
+  - blocks_complex_to_imag_1
+  - '0'
+- - blocks_complex_to_imag_1
+  - '0'
+  - blocks_multiply_const_vxx_1
+  - '0'
+- - blocks_delay_0
+  - '0'
+  - blocks_add_xx_0
+  - '0'
+- - blocks_multiply_const_vxx_1
+  - '0'
+  - blocks_add_xx_0
+  - '1'
+- - blocks_add_xx_0
+  - '0'
+  - demod_select
+  - '1'
+- - demod_select
+  - '0'
+  - dc_blocker_xx_0
+  - '0'
+- - dc_blocker_xx_0
+  - '0'
+  - blocks_multiply_const_vxx_0
+  - '0'
+- - blocks_multiply_const_vxx_0
+  - '0'
+  - rational_resampler_xxx_0
+  - '0'
+- - rational_resampler_xxx_0
+  - '0'
+  - blocks_float_to_short_0
+  - '0'
+- - blocks_float_to_short_0
+  - '0'
+  - audio_out
+  - '0'
+metadata:
+  file_format: 1
+  grc_version: 3.10.12.0

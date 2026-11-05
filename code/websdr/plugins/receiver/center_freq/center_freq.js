@@ -7,9 +7,12 @@
  * allow_center_freq_changes === true.
  */
 
-// Accepted input range in MHz (R820T-based RTL-SDR tuning range).
-var CENTER_FREQ_MIN_MHZ = 24;
-var CENTER_FREQ_MAX_MHZ = 1766;
+// Accepted input range in MHz per SDR id (the keys under "sdrs" in settings.json).
+// Devices not listed accept any positive frequency.
+var CENTER_FREQ_LIMITS_MHZ = {
+    rtlsdr: [24, 1766],     // R820T tuning range
+    tayloe: [0.1, 30]       // the rtl_tcp bridge's --fmin/--fmax
+};
 
 // How long to wait for the server to confirm a retune before reporting it was ignored.
 var CENTER_FREQ_CONFIRM_MS = 3000;
@@ -51,6 +54,7 @@ Plugins.center_freq._setup = function () {
     self.input = line.querySelector('input');
     self.status = line.querySelector('.openwebrx-center-freq-status');
     self.allowed = null;
+    self.sdrId = null;
     self.pendingHz = null;
     self.pendingTimer = null;
 
@@ -113,6 +117,9 @@ Plugins.center_freq._onMessage = function (evt) {
         this.allowed = config.allow_center_freq_changes === true;
         this.line.style.display = this.allowed ? '' : 'none';
     }
+    if ('sdr_id' in config) {
+        this.sdrId = config.sdr_id;
+    }
     if ('center_freq' in config) {
         this._onCenterChanged(config.center_freq);
     }
@@ -146,8 +153,9 @@ Plugins.center_freq._submit = function () {
         this._setStatus('Enter a frequency in MHz.', true);
         return;
     }
-    if (mhz <= 0 || mhz < CENTER_FREQ_MIN_MHZ || mhz > CENTER_FREQ_MAX_MHZ) {
-        this._setStatus('Must be ' + CENTER_FREQ_MIN_MHZ + '-' + CENTER_FREQ_MAX_MHZ + ' MHz.', true);
+    var limits = CENTER_FREQ_LIMITS_MHZ[this.sdrId] || [0, Infinity];
+    if (mhz <= 0 || mhz < limits[0] || mhz > limits[1]) {
+        this._setStatus('Must be ' + limits[0] + '-' + limits[1] + ' MHz on this SDR.', true);
         return;
     }
     if (typeof ws === 'undefined' || !ws || ws.readyState !== WebSocket.OPEN) {

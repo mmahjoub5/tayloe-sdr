@@ -56,3 +56,6 @@ code/gnu-radio/audio/
 _restore_backup_*/
 *.FCBak
 meche/out/tayloe_sdr_enclosure_assembly.step
+
+# grcc output for the WebSDR engine (run.sh regenerates it)
+code/websdr/sdr/build/

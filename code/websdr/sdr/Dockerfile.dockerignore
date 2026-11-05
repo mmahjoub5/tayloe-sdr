@@ -1,0 +1,6 @@
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+radiolib/tests
+websdr/sdr/build
+websdr/sdr/tests

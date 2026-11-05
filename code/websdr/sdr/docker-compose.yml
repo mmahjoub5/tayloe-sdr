@@ -1,0 +1,37 @@
+# The WebSDR on the Pi: three services from one image (see Dockerfile and DOCKER.md).
+# Host networking keeps every internal port on 127.0.0.1 as in PROTOCOL.md; the page is on :8090.
+# Put SDR_KEY=<key> in a .env file next to this one.
+
+x-websdr: &websdr
+  image: websdr:latest
+  network_mode: host
+  restart: unless-stopped
+
+services:
+  bridge:
+    <<: *websdr
+    command: python3 iq_bridge.py --no-tune
+    # The whole of /dev, so the board is found again if it comes back under another name after a replug.
+    volumes:
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 166:* rmw"                       # USB CDC serial (ttyACM*)
+
+  engine:
+    <<: *websdr
+    command: python3 build/engine.py
+    depends_on: [bridge]
+
+  server:
+    <<: *websdr
+    command: python3 sdr/server.py --listen 0.0.0.0:8090
+    environment:
+      - SDR_KEY
+    pid: host                               # diagnostics see the Pi's processes, not just this container's
+    # The Pi's own vcgencmd (needs only libc) for the throttling flags on the diagnostics page.
+    volumes:
+      - /usr/bin/vcgencmd:/usr/bin/vcgencmd:ro
+    devices:
+      - /dev/vchiq
+      - /dev/vcio
+    depends_on: [engine]
