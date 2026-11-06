@@ -18,6 +18,8 @@ LISTEN = "127.0.0.1:1234"
 # rtl_tcp command codes; every other code is accepted and ignored.
 CMD_FREQ = 0x01
 CMD_RATE = 0x02
+CMD_GAIN_MODE = 0x03
+CMD_GAIN = 0x04
 
 TUNER_R820T = 5
 GAIN_STEPS = 29
@@ -30,13 +32,14 @@ RETRY_S = 3.0
 
 
 class Tuning:
-    """Frequency requests from the client, handed over to the streaming loop."""
+    """Frequency and gain requests from the client, handed over to the streaming loop."""
 
     def __init__(self):
-        """Start with no request pending."""
+        """Start with no request pending and no gain set by the client."""
         self.lock = threading.Lock()
         self.pending = None
         self.stamp = 0.0
+        self.gain_db = None             # None means --gain; set by the profile's rf_gain
 
     def request(self, hz: int):
         """
@@ -134,6 +137,10 @@ def read_commands(conn: socket.socket, tuning: Tuning, rate: int):
             buf = buf[5:]
             if cmd == CMD_FREQ:
                 tuning.request(value)
+            elif cmd == CMD_GAIN_MODE and value == 0:
+                tuning.gain_db = None
+            elif cmd == CMD_GAIN:
+                tuning.gain_db = struct.unpack(">i", struct.pack(">I", value))[0] / 10
             elif cmd == CMD_RATE and value != rate:
                 print(f"client asked for {value} Hz; the board streams {rate} Hz, "
                       f"set samp_rate {rate} in the profile")
@@ -156,7 +163,7 @@ def serve_client(board: RadioBoard, conn: socket.socket, args, state: dict):
     reader = threading.Thread(target=read_commands, args=(conn, tuning, rate), daemon=True)
     reader.start()
 
-    gain = 10 ** (args.gain / 20)
+    gain_db = None
     levels = Levels()
     zi = None
     while reader.is_alive():
@@ -167,7 +174,11 @@ def serve_client(board: RadioBoard, conn: socket.socket, args, state: dict):
                     if zi is None:
                         zi = np.array([-iq[0] * DC_POLE], dtype=complex)
                     iq, zi = lfilter([1, -1], [1, -DC_POLE], iq, zi=zi)
-                data, x = to_u8(iq, gain)
+                want = args.gain if tuning.gain_db is None else tuning.gain_db
+                if want != gain_db:
+                    gain_db = want
+                    print(f"gain {gain_db:g} dB")
+                data, x = to_u8(iq, 10 ** (gain_db / 20))
                 try:
                     conn.sendall(data)
                 except OSError:
@@ -234,7 +245,7 @@ def main():
     ap.add_argument("--port", default=None, help="serial port; found by USB ID if omitted")
     ap.add_argument("--listen", default=LISTEN, help="host:port to serve rtl_tcp on")
     ap.add_argument("--gain", type=float, default=DEFAULT_GAIN_DB,
-                    help="dB of digital gain before quantizing to 8 bits")
+                    help="dB of digital gain before quantizing to 8 bits, unless the profile sets rf_gain")
     ap.add_argument("--decim", type=int, choices=(1, 2), default=1,
                     help="firmware decimation: 1 = 48 kHz, 2 = 24 kHz")
     ap.add_argument("--fmin", type=float, default=100e3, help="lowest center frequency accepted, Hz")

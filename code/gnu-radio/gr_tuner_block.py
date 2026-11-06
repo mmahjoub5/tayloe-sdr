@@ -18,6 +18,11 @@ from gnuradio import gr
 # subscribed to.
 CONTROL = 'tcp://127.0.0.1:5556'
 
+# Repeat the current request this often, so a bridge that restarted (crash,
+# board replugged) comes back tuned. The bridge ignores a request for where
+# it already is, so repeats cost nothing.
+RESEND_S = 3.0
+
 
 class blk(gr.sync_block):
     """Tune the radio board from GRC.
@@ -61,6 +66,7 @@ class blk(gr.sync_block):
 
     def _send(self):
         self._sock.send(f"{self._freq} {self._offset}".encode())
+        self._sent = time.time()
 
     # A property, so GRC registers a callback on the matching parameter name.
     @property
@@ -89,4 +95,6 @@ class blk(gr.sync_block):
 
     def work(self, input_items, output_items):
         output_items[0][:] = input_items[0]
+        if time.time() - self._sent > RESEND_S:
+            self._send()
         return len(output_items[0])

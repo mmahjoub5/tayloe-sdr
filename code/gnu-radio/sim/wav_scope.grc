@@ -1,0 +1,241 @@
+options:
+  parameters:
+    author: aminmahjoub
+    generate_options: qt_gui
+    id: wav_scope
+    output_language: python
+    run_options: prompt
+    title: WAV Scope (XML-RPC)
+    window_size: (1400,1000)
+  states:
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: samp_rate
+  id: variable
+  parameters:
+    comment: must match the WAV file
+    value: '48000'
+  states:
+    coordinate: [200, 12]
+    rotation: 0
+    state: enabled
+- name: volume
+  id: variable_qtgui_range
+  parameters:
+    gui_hint: 0,0,1,2
+    label: Volume (dB)
+    min_len: '200'
+    orient: QtCore.Qt.Horizontal
+    rangeType: float
+    start: '-100'
+    step: '0.1'
+    stop: '10'
+    value: '-6'
+    widget: counter_slider
+  states:
+    coordinate: [320, 12]
+    rotation: 0
+    state: enabled
+- name: cutoff
+  id: variable_qtgui_label
+  parameters:
+    comment: set over XML-RPC, e.g. python rpc.py set_cutoff 1000
+    gui_hint: 0,2,1,2
+    label: Low-pass cutoff (Hz)
+    type: real
+    value: '3000'
+  states:
+    coordinate: [520, 12]
+    rotation: 0
+    state: enabled
+- name: views
+  id: qtgui_tab_widget
+  parameters:
+    gui_hint: 1,0,10,4
+    label0: Spectrum
+    label1: Waterfall
+    label2: Time
+    num_tabs: '3'
+  states:
+    coordinate: [720, 12]
+    rotation: 0
+    state: enabled
+- name: xmlrpc_server_0
+  id: xmlrpc_server
+  parameters:
+    addr: 127.0.0.1
+    port: '8080'
+  states:
+    coordinate: [904, 12]
+    rotation: 0
+    state: enabled
+
+- name: blocks_wavfile_source_0
+  id: blocks_wavfile_source
+  parameters:
+    file: /Users/aminmahjoub/Documents/pcb/radio/code/gnu-radio/audio/tidal_48k.wav
+    nchan: '1'
+    repeat: 'True'
+  states:
+    coordinate: [16, 300]
+    rotation: 0
+    state: enabled
+- name: filter_fft_low_pass_filter_0
+  id: filter_fft_low_pass_filter
+  parameters:
+    beta: '6.76'
+    cutoff_freq: cutoff
+    decim: '1'
+    gain: '1'
+    nthreads: '1'
+    samp_rate: samp_rate
+    type: fff
+    width: '500'
+    win: window.WIN_HAMMING
+  states:
+    coordinate: [264, 284]
+    rotation: 0
+    state: enabled
+- name: blocks_multiply_const_vxx_0
+  id: blocks_multiply_const_vxx
+  parameters:
+    const: 10**(volume/20)
+    type: float
+    vlen: '1'
+  states:
+    coordinate: [520, 316]
+    rotation: 0
+    state: enabled
+- name: audio_sink_0
+  id: audio_sink
+  parameters:
+    comment: the audio card paces the flowgraph; no Throttle needed
+    num_inputs: '1'
+    ok_to_block: 'True'
+    samp_rate: samp_rate
+  states:
+    coordinate: [720, 312]
+    rotation: 0
+    state: enabled
+
+- name: blocks_rms_xx_0
+  id: blocks_rms_xx
+  parameters:
+    alpha: '1e-3'
+    type: float
+  states:
+    coordinate: [520, 428]
+    rotation: 0
+    state: enabled
+- name: blocks_nlog10_ff_0
+  id: blocks_nlog10_ff
+  parameters:
+    k: '0'
+    n: '20'
+    vlen: '1'
+  states:
+    coordinate: [720, 420]
+    rotation: 0
+    state: enabled
+- name: audio_level
+  id: qtgui_number_sink
+  parameters:
+    autoscale: 'False'
+    avg: '0'
+    gui_hint: 11,0,1,4
+    graph_type: qtgui.NUM_GRAPH_HORIZ
+    label1: Level
+    max: '0'
+    min: '-80'
+    name: '"Audio level (dBFS rms)"'
+    nconnections: '1'
+    type: float
+    unit1: dB
+    update_time: '0.10'
+  states:
+    coordinate: [904, 412]
+    rotation: 0
+    state: enabled
+
+- name: spectrum
+  id: qtgui_freq_sink_x
+  parameters:
+    average: '0.2'
+    bw: samp_rate
+    fc: '0'
+    fftsize: '2048'
+    freqhalf: 'False'
+    grid: 'True'
+    gui_hint: 'views@0: 0,0,1,1'
+    label1: WAV in
+    label2: Low-passed
+    legend: 'True'
+    name: '"Spectrum (audio Hz)"'
+    nconnections: '2'
+    type: float
+    wintype: window.WIN_BLACKMAN_hARRIS
+    ymax: '10'
+    ymin: '-140'
+  states:
+    coordinate: [264, 540]
+    rotation: 0
+    state: enabled
+- name: waterfall
+  id: qtgui_waterfall_sink_x
+  parameters:
+    bw: samp_rate
+    fc: '0'
+    fftsize: '2048'
+    freqhalf: 'False'
+    grid: 'True'
+    gui_hint: 'views@1: 0,0,1,1'
+    int_max: '-20'
+    int_min: '-120'
+    name: '"Low-passed (audio Hz)"'
+    nconnections: '1'
+    type: float
+    wintype: window.WIN_BLACKMAN_hARRIS
+  states:
+    coordinate: [720, 540]
+    rotation: 0
+    state: enabled
+- name: scope
+  id: qtgui_time_sink_x
+  parameters:
+    grid: 'True'
+    gui_hint: 'views@2: 0,0,1,1'
+    label1: WAV in
+    label2: Low-passed
+    legend: 'True'
+    name: '"Samples"'
+    nconnections: '2'
+    size: '2048'
+    srate: samp_rate
+    type: float
+    ylabel: Amplitude
+    ymax: '1'
+    ymin: '-1'
+  states:
+    coordinate: [264, 700]
+    rotation: 0
+    state: enabled
+
+connections:
+- [blocks_wavfile_source_0, '0', filter_fft_low_pass_filter_0, '0']
+- [blocks_wavfile_source_0, '0', spectrum, '0']
+- [blocks_wavfile_source_0, '0', scope, '0']
+- [filter_fft_low_pass_filter_0, '0', blocks_multiply_const_vxx_0, '0']
+- [filter_fft_low_pass_filter_0, '0', spectrum, '1']
+- [filter_fft_low_pass_filter_0, '0', scope, '1']
+- [filter_fft_low_pass_filter_0, '0', waterfall, '0']
+- [blocks_multiply_const_vxx_0, '0', audio_sink_0, '0']
+- [blocks_multiply_const_vxx_0, '0', blocks_rms_xx_0, '0']
+- [blocks_rms_xx_0, '0', blocks_nlog10_ff_0, '0']
+- [blocks_nlog10_ff_0, '0', audio_level, '0']
+
+metadata:
+  file_format: 1
+  grc_version: 3.10.12.0

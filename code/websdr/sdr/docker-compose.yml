@@ -1,0 +1,46 @@
+# The WebSDR on the Pi: three services from one image (see Dockerfile and DOCKER.md).
+# Host networking keeps every internal port on 127.0.0.1 as in PROTOCOL.md; the page is on :8090.
+# Put SDR_KEY=<key> in a .env file next to this one.
+#
+# The code is mounted from ~/websdr-src (copied over from the Mac), not baked in, so an update is: copy, then
+# `docker compose restart engine server bridge`. Rebuild the image only when packages change.
+
+x-websdr: &websdr
+  image: websdr:latest
+  network_mode: host
+  restart: unless-stopped
+
+services:
+  bridge:
+    <<: *websdr
+    command: python3 iq_bridge.py --no-tune
+    # The whole of /dev, so the board is found again if it comes back under another name after a replug.
+    volumes:
+      - /dev:/dev
+      - ../websdr-src/gnu-radio/iq_bridge.py:/opt/websdr/iq_bridge.py:ro
+      - ../websdr-src/radiolib/radiolib:/usr/local/lib/python3.13/dist-packages/radiolib:ro
+    device_cgroup_rules:
+      - "c 166:* rmw"                       # USB CDC serial (ttyACM*)
+
+  engine:
+    <<: *websdr
+    # Compiled at start, so a new engine.grc only needs a restart.
+    command: sh -c "grcc -o /tmp/build sdr/engine.grc > /dev/null && exec python3 /tmp/build/engine.py"
+    volumes:
+      - ../websdr-src/websdr/sdr:/opt/websdr/sdr:ro
+    depends_on: [bridge]
+
+  server:
+    <<: *websdr
+    command: python3 sdr/server.py --listen 0.0.0.0:8090
+    environment:
+      - SDR_KEY
+    pid: host                               # diagnostics see the Pi's processes, not just this container's
+    # The Pi's own vcgencmd (needs only libc) for the throttling flags on the diagnostics page.
+    volumes:
+      - ../websdr-src/websdr/sdr:/opt/websdr/sdr:ro
+      - /usr/bin/vcgencmd:/usr/bin/vcgencmd:ro
+    devices:
+      - /dev/vchiq
+      - /dev/vcio
+    depends_on: [engine]

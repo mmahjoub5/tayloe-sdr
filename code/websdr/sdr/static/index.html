@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d14">
+<title>Tayloe WebSDR</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23ffb347%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>Tayloe <b>WebSDR</b></div>
+  <div class="badges">
+    <a class="diag-link" href="diag.html" title="Server diagnostics">Diagnostics</a>
+    <span id="listen-only" class="badge warn" hidden title="Add #key=… to the URL to tune">listen-only</span>
+    <span id="status" class="status" data-state="connecting"><i></i><span>connecting…</span></span>
+  </div>
+</header>
+
+<main>
+  <section class="console">
+    <div class="readout-box">
+      <div class="readout-label"><span id="mode-tag">USB</span><span id="retune-tag" hidden>retuning…</span></div>
+      <div id="readout" class="readout" title="Scroll over a digit (or tap its top/bottom half) to tune"></div>
+      <div class="readout-sub">center <span id="center-val">–</span> kHz · offset <span id="offset-val">–</span> Hz</div>
+    </div>
+    <div class="meter-box">
+      <div class="meter-head"><span>Signal</span><span id="meter-val">– dB S/N</span></div>
+      <div class="meter"><div id="meter-bar"></div><div id="meter-peak"></div></div>
+      <div class="meter-scale"><span>0</span><span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span></div>
+    </div>
+  </section>
+
+  <section class="scope">
+    <canvas id="scale" height="28"></canvas>
+    <div id="wf-wrap" class="wf-wrap">
+      <canvas id="waterfall" width="1024" height="320"></canvas>
+      <div id="passband" class="passband" hidden><div class="pb-center"></div></div>
+      <div id="cursor" class="cursor" hidden><span></span></div>
+      <div id="wf-msg" class="wf-msg">waiting for waterfall…</div>
+    </div>
+  </section>
+
+  <section class="controls">
+    <div class="group">
+      <h2>Mode</h2>
+      <div class="seg" id="modes">
+        <button data-mode="0">AM</button><button data-mode="1">USB</button><button data-mode="2">LSB</button>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Volume <span id="vol-val" class="dim">–</span></h2>
+      <input id="volume" type="range" min="-80" max="40" step="1" value="-6" aria-label="Volume (dB)">
+    </div>
+    <div class="group">
+      <h2>Go to</h2>
+      <form id="goto" class="goto">
+        <input id="goto-khz" type="text" inputmode="decimal" placeholder="kHz, e.g. 7074" aria-label="Frequency in kHz">
+        <button type="submit">Go</button>
+      </form>
+    </div>
+    <div class="group">
+      <h2>Audio <span id="buf-val" class="dim"></span></h2>
+      <button id="audio-btn" class="primary">▶ Start audio</button>
+    </div>
+    <div class="group wide">
+      <h2>Presets</h2>
+      <div class="presets" id="presets"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="audio-worklet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

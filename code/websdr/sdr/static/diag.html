@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebSDR Diagnostics</title>
+<style>
+  :root {
+    --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e2e1dc;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77756f;
+    --series-1: #2a78d6; --series-1-fill: rgba(42, 120, 214, 0.10); --grid: #ebeae6;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface-0: #0f0f0e; --surface-1: #1a1a19; --border: #2c2c2a;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8d8c84;
+      --series-1: #3987e5; --series-1-fill: rgba(57, 135, 229, 0.14); --grid: #262624;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface-0: #0f0f0e; --surface-1: #1a1a19; --border: #2c2c2a;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8d8c84;
+    --series-1: #3987e5; --series-1-fill: rgba(57, 135, 229, 0.14); --grid: #262624;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+         font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 16px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header a { color: var(--series-1); text-decoration: none; }
+  header .meta { color: var(--text-muted); font-size: 12px; margin-left: auto; }
+  main { padding: 0 16px 24px; max-width: 1200px; margin: 0 auto; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 20px 0 8px;
+       text-transform: uppercase; letter-spacing: .04em; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .tile .label { color: var(--text-secondary); font-size: 12px; }
+  .tile .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tile .sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+            color: var(--text-primary); margin-top: 4px; }
+  .status svg { width: 14px; height: 14px; flex: none; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 8px; }
+  .chart { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 6px;
+           position: relative; }
+  .chart .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .chart .title { color: var(--text-secondary); font-size: 12px; }
+  .chart .now { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chart svg { display: block; width: 100%; height: 110px; margin-top: 4px; touch-action: none; }
+  .chart .axis { fill: var(--text-muted); font-size: 10px; }
+  .chart .gridline { stroke: var(--grid); stroke-width: 1; }
+  .chart .line { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .area { fill: var(--series-1-fill); stroke: none; }
+  .chart .dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2; }
+  .chart .cross { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-0); border: 1px solid var(--border);
+         border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; color: var(--text-primary);
+         box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+  .tip .t { color: var(--text-muted); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border);
+          border-radius: 8px; overflow: hidden; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; }
+  .muted { color: var(--text-muted); }
+  .error { color: var(--critical); margin: 12px 0; }
+  @media (max-width: 420px) { .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Diagnostics</h1>
+  <a href="/">← back to the radio</a>
+  <span class="meta" id="meta">loading…</span>
+</header>
+<main>
+  <div id="error" class="error" hidden></div>
+  <h2>Now</h2>
+  <div class="tiles" id="tiles"></div>
+  <h2>Last <span id="span">–</span></h2>
+  <div class="charts" id="charts"></div>
+  <h2>Processes</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Process</th><th class="num">PID</th><th class="num">CPU %</th><th class="num">Memory MB</th><th>State</th></tr></thead>
+    <tbody id="procs"></tbody>
+  </table></div>
+</main>
+
+<script>
+const ICONS = {
+  good: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--good)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  warning: '<svg viewBox="0 0 16 16"><path d="M8 1.5l7 13H1z" fill="var(--warning)"/><path d="M8 6v4M8 12v.5" stroke="#000" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  critical: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--critical)"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  none: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--text-muted)" stroke-width="2"/></svg>',
+};
+const AUDIO_SPS = 12000;
+
+// Each chart: one series, its own y-scale, no legend (the title names it).
+const CHARTS = [
+  {key: "temp_c", title: "CPU temperature", unit: "°C", fmt: v => v.toFixed(1), min: 30, max: 85},
+  {key: "cpu", title: "CPU (all cores)", unit: "%", fmt: v => v.toFixed(0), min: 0, max: 100},
+  {key: "mem_pct", title: "Memory used", unit: "%", fmt: v => v.toFixed(0), min: 0, max: 100},
+  {key: "audio_sps", title: "Audio from engine", unit: "samples/s", fmt: v => v.toFixed(0), min: 0, max: AUDIO_SPS * 1.2},
+  {key: "wifi_dbm", title: "Wi-Fi signal", unit: "dBm", fmt: v => v.toFixed(0), min: -90, max: -30},
+  {key: "load1", title: "Load average (1 min)", unit: "", fmt: v => v.toFixed(2), min: 0, max: 4},
+];
+
+let samples = [], last = 0, interval = 2;
+
+function status(level, text) {
+  return `<div class="status">${ICONS[level]}<span>${text}</span></div>`;
+}
+
+function tempStatus(t) {
+  if (t == null) return status("none", "not reported here");
+  if (t >= 80) return status("critical", "hot: throttling");
+  if (t >= 60) return status("warning", "warm: soft limit");
+  return status("good", "ok");
+}
+
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function tile(label, value, sub = "", st = "") {
+  return `<div class="tile"><div class="label">${label}</div><div class="value">${value}</div>` +
+         (sub ? `<div class="sub">${sub}</div>` : "") + st + `</div>`;
+}
+
+function renderTiles(s) {
+  const th = s.throttled;
+  const thStatus = !th ? status("none", "not a Pi")
+    : th.now.length ? status("critical", th.now.join(", "))
+    : th.since_boot.length ? status("warning", "since boot: " + th.since_boot.join(", "))
+    : status("good", "never");
+  const audioOk = s.audio_sps >= AUDIO_SPS * 0.97 && s.audio_sps <= AUDIO_SPS * 1.03;
+  const audioStatus = !s.engine_ok ? status("critical", "engine down")
+    : s.audio_sps === 0 ? status("critical", "no audio")
+    : audioOk ? status("good", "real time") : status("warning", `${(100 * s.audio_sps / AUDIO_SPS).toFixed(0)}% of real time`);
+  document.getElementById("tiles").innerHTML = [
+    tile("CPU temperature", s.temp_c == null ? "–" : `${s.temp_c.toFixed(1)} °C`, "", tempStatus(s.temp_c)),
+    tile("Throttling", !th ? "–" : th.now.length ? "active" : "none", "", thStatus),
+    tile("CPU", `${s.cpu.toFixed(0)} %`, `load ${s.load1.toFixed(2)}`),
+    tile("Memory", `${s.mem_pct.toFixed(0)} %`, `${s.mem_used_mb} of ${s.mem_total_mb} MB`),
+    tile("Disk", `${s.disk_pct.toFixed(0)} %`, "root filesystem"),
+    tile("Wi-Fi", s.wifi_dbm == null ? "–" : `${s.wifi_dbm.toFixed(0)} dBm`, s.wifi_dbm == null ? "not reported" : ""),
+    tile("Uptime", duration(s.uptime_s)),
+    tile("Engine", s.engine_ok ? "up" : "down", "", s.engine_ok ? status("good", "XML-RPC answering") : status("critical", "not reachable")),
+    tile("Audio", `${(s.audio_sps / 1000).toFixed(2)} k/s`, `${s.waterfall_rows_s.toFixed(1)} waterfall rows/s`, audioStatus),
+    tile("Listeners", s.listeners, s.dropped ? `${s.dropped} frames dropped (slow client)` : "no frames dropped"),
+  ].join("");
+}
+
+function renderProcs(s) {
+  document.getElementById("procs").innerHTML = Object.entries(s.procs).map(([name, p]) =>
+    p ? `<tr><td>${name}</td><td class="num">${p.pid}</td><td class="num">${p.cpu.toFixed(1)}</td>` +
+        `<td class="num">${p.rss_mb.toFixed(0)}</td><td>${status("good", "running")}</td></tr>`
+      : `<tr><td>${name}</td><td class="num muted">–</td><td class="num muted">–</td><td class="num muted">–</td>` +
+        `<td>${status("critical", "not running")}</td></tr>`).join("");
+}
+
+function setupCharts() {
+  document.getElementById("charts").innerHTML = CHARTS.map(c =>
+    `<div class="chart" id="c-${c.key}"><div class="head"><span class="title">${c.title}</span>` +
+    `<span class="now"></span></div><svg></svg><div class="tip" hidden></div></div>`).join("");
+  for (const c of CHARTS) {
+    const el = document.getElementById(`c-${c.key}`), svg = el.querySelector("svg"), tip = el.querySelector(".tip");
+    const move = (e) => {
+      const pts = c.pts;
+      if (!pts || !pts.length) return;
+      const r = svg.getBoundingClientRect(), x = e.clientX - r.left;
+      let best = pts[0];
+      for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
+      svg.querySelector(".cross").setAttribute("x1", best.x);
+      svg.querySelector(".cross").setAttribute("x2", best.x);
+      svg.querySelector(".cross").style.display = "";
+      const when = new Date(best.t * 1000).toLocaleTimeString();
+      tip.innerHTML = `<span class="t">${when}</span> &nbsp;${c.fmt(best.v)} ${c.unit}`;
+      tip.hidden = false;
+      const left = Math.min(best.x + 12, r.width - tip.offsetWidth);
+      tip.style.left = `${left + 12}px`;
+      tip.style.top = `${36}px`;
+    };
+    svg.addEventListener("pointermove", move);
+    svg.addEventListener("pointerdown", move);
+    svg.addEventListener("pointerleave", () => { tip.hidden = true; const x = svg.querySelector(".cross"); if (x) x.style.display = "none"; });
+  }
+}
+
+function renderChart(c) {
+  const el = document.getElementById(`c-${c.key}`), svg = el.querySelector("svg");
+  const data = samples.filter(s => s[c.key] != null).map(s => ({t: s.t, v: s[c.key]}));
+  const nowEl = el.querySelector(".now");
+  if (!data.length) {
+    nowEl.textContent = "–";
+    svg.innerHTML = `<text class="axis" x="50%" y="55%" text-anchor="middle">not reported on this machine</text>`;
+    c.pts = [];
+    return;
+  }
+  const W = svg.clientWidth || 320, H = 110, padL = 34, padR = 8, padT = 8, padB = 18;
+  const vmin = Math.min(c.min, ...data.map(d => d.v)), vmax = Math.max(c.max, ...data.map(d => d.v));
+  const t1 = data[data.length - 1].t, t0 = Math.min(data[0].t, t1 - 60);
+  const x = t => padL + (t - t0) / (t1 - t0) * (W - padL - padR);
+  const y = v => padT + (1 - (v - vmin) / (vmax - vmin || 1)) * (H - padT - padB);
+  c.pts = data.map(d => ({x: x(d.t), y: y(d.v), t: d.t, v: d.v}));
+  const line = c.pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join("");
+  const base = y(vmin);
+  const area = `${line}L${c.pts[c.pts.length - 1].x.toFixed(1)},${base}L${c.pts[0].x.toFixed(1)},${base}Z`;
+  const lastP = c.pts[c.pts.length - 1];
+  const mins = Math.round((t1 - t0) / 60);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML =
+    `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(vmax)}" y2="${y(vmax)}"/>` +
+    `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${base}" y2="${base}"/>` +
+    `<text class="axis" x="${padL - 4}" y="${y(vmax) + 4}" text-anchor="end">${c.fmt(vmax)}</text>` +
+    `<text class="axis" x="${padL - 4}" y="${base + 3}" text-anchor="end">${c.fmt(vmin)}</text>` +
+    `<text class="axis" x="${padL}" y="${H - 4}">−${mins} min</text>` +
+    `<text class="axis" x="${W - padR}" y="${H - 4}" text-anchor="end">now</text>` +
+    `<path class="area" d="${area}"/><path class="line" d="${line}"/>` +
+    `<circle class="dot" cx="${lastP.x}" cy="${lastP.y}" r="4"/>` +
+    `<line class="cross" x1="0" x2="0" y1="${padT}" y2="${base}" style="display:none"/>`;
+  nowEl.textContent = `${c.fmt(lastP.v)} ${c.unit}`;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/api/diag?since=${last}`);
+    const j = await r.json();
+    interval = j.interval_s;
+    if (j.samples.length) {
+      samples = samples.concat(j.samples).slice(-900);
+      last = samples[samples.length - 1].t;
+      const s = samples[samples.length - 1];
+      renderTiles(s);
+      renderProcs(s);
+      CHARTS.forEach(renderChart);
+      const spanMin = Math.round((samples[samples.length - 1].t - samples[0].t) / 60);
+      document.getElementById("span").textContent = spanMin >= 1 ? `${spanMin} min` : "minute";
+      document.getElementById("meta").textContent = `updated ${new Date(last * 1000).toLocaleTimeString()} · every ${interval} s`;
+    }
+    document.getElementById("error").hidden = true;
+  } catch (e) {
+    const err = document.getElementById("error");
+    err.textContent = `Can't reach the server: ${e.message}`;
+    err.hidden = false;
+  }
+  setTimeout(poll, interval * 1000);
+}
+
+setupCharts();
+window.addEventListener("resize", () => CHARTS.forEach(renderChart));
+poll();
+</script>
+</body>
+</html>

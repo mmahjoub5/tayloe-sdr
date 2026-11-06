@@ -3,6 +3,7 @@
 ```
 iq_bridge.py        board -> ZMQ (tcp://127.0.0.1:5555), tune requests on :5556
 tune.py             retune the bridge from a terminal
+rpc.py              call a running flowgraph's XML-RPC Server block (set_/get_ a variable)
 gr_tuner_block.py   source of the "Board Tuner" Embedded Python Block
 board/              flowgraphs fed by iq_bridge.py
   am_receiver.grc
@@ -17,6 +18,7 @@ hackrf/             transmit through a HackRF
   cw_tx.grc
 sim/                no hardware
   ssb_phasing.grc
+  wav_scope.grc     WAV -> low-pass -> audio, with spectrum/waterfall/scope/level; cutoff set over XML-RPC
   fast_multiply.grc
 audio/              test audio (gitignored)
 ```
