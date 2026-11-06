@@ -164,3 +164,8 @@ def test_multi_set_refuses_unknown_before_setting_any():
         ws.send_text(json.dumps({"set": {"mode": 0, "samp_rate": 1}}))
         assert "can't be set" in json.loads(ws.receive_text())["error"]
         assert engine.values["mode"] == 1
+
+
+def test_static_files_revalidate():
+    with connect(FakeEngine()) as client:
+        assert client.get("/app.js").headers["cache-control"] == "no-cache"

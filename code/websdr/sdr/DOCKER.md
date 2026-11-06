@@ -33,8 +33,10 @@ OpenWebRX keeps the RTL dongle; its "Tayloe board" device stops working while th
     docker compose logs -f engine                   # or bridge, server
     docker compose down
 
-After copying a new image: `docker compose up -d` again (it recreates the containers). Services restart on
-their own after a crash or a reboot. The bridge exits if the board is unplugged and restarts until it's back;
+The code isn't baked into the image: compose mounts `~/websdr-src` (bridge script, `websdr/sdr/`) and the engine
+compiles `engine.grc` when it starts (~10 s). So a code change is the `tar | ssh` copy above, then
+`docker compose up -d --force-recreate engine server` (and `bridge` if `iq_bridge.py` changed); no `docker build`.
+Rebuild the image only when packages or radiolib change. Services restart on their own after a crash or a reboot. The bridge exits if the board is unplugged and restarts until it's back;
 the engine's Board Tuner repeats its frequency every 3 s, so the board comes back tuned.
 
 Public access: point cloudflared at `http://localhost:8090`.

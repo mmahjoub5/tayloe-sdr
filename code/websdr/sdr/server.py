@@ -203,6 +203,13 @@ def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS
         ctx.term()
 
     app = FastAPI(lifespan=lifespan)
+
+    @app.middleware("http")
+    async def revalidate(request, call_next):
+        # Browsers otherwise keep running an old app.js after a deploy; unchanged files still come back as 304.
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
     app.state.hub = hub
 
     @app.websocket("/ws")

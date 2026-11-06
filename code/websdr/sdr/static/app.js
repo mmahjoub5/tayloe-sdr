@@ -7,12 +7,13 @@ const MAX_OFFSET = 11000;           // keep the station this far inside the span
 const DB_PER_UNIT = 100 / 255;      // waterfall byte -> dB (assumes the engine maps 100 dB to 0..255)
 const MODES = ["AM", "USB", "LSB"];
 const PASSBAND = [[-4500, 4500], [300, 2700], [-2700, -300]];   // Hz around the station, per mode
-const DEFAULT_OFFSET = [3000, 5000, 5000];
+const DEFAULT_OFFSET = [5000, 5000, 5000];
+// volume (dB) per preset: the engine has no AGC, so band levels differ; measured for ~-20 dBFS rms audio.
 const PRESETS = [
-  { name: "AM 1170", center: 1167000, offset: 3000, mode: 0 },
-  { name: "40m FT8", center: 7069000, offset: 5000, mode: 1 },
-  { name: "40m SSB", center: 7195000, offset: 5000, mode: 2 },
-  { name: "20m FT8", center: 14069000, offset: 5000, mode: 1 },
+  { name: "AM 1170", center: 1165000, offset: 5000, mode: 0, volume: -33 },
+  { name: "40m FT8", center: 7069000, offset: 5000, mode: 1, volume: -22 },
+  { name: "40m SSB", center: 7195000, offset: 5000, mode: 2, volume: -17 },
+  { name: "20m FT8", center: 14069000, offset: 5000, mode: 1, volume: -22 },
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -252,7 +253,7 @@ PRESETS.forEach((p) => {
   b.textContent = p.name;
   b.addEventListener("click", () => {
     if (!key) return toast("Listen-only: add #key=… to the URL to tune");
-    sendMany({ center: p.center, offset: p.offset, mode: p.mode });
+    sendMany({ center: p.center, offset: p.offset, mode: p.mode, volume: p.volume });
   });
   $("presets").appendChild(b);
 });

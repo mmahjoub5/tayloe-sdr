@@ -155,8 +155,12 @@ board ─USB─▶ iq_bridge.py ─ZMQ :5555─▶ engine.grc ─ZMQ :5560 water
 ```
 
 - `engine.grc`: headless GNU Radio flowgraph (grc-maker skill). Board Tuner → waterfall (`logpwrfft_x`, ~12 rows/s,
-  -120..-20 dB → 0–255) and two demods running side by side: AM (slow AGC, `am_demod_cf`) and SSB phasing (AGC,
-  delay 127 / Hilbert 255). A selector picks one; audio goes out at 12 kHz int16.
+  -120..-20 dB → 0–255) and two demods running side by side: AM (`am_demod_cf`) and SSB phasing (delay 127 /
+  Hilbert 255). A selector picks one; audio goes out at 12 kHz int16.
+- No AGC: `volume` (dB) is the only level control, and band levels differ (measured on the Pi with the antenna:
+  AM 1170 wants -33 dB, 40 m FT8 -22 dB, 40 m SSB -17 dB for ~-20 dBFS audio). Each page preset carries its volume;
+  audio above 0 dBFS clips. The engine starts at -22 dB.
+- Every mode uses a 5 kHz offset: the page sets center = station - 5 kHz (AM 1170 → center 1165 kHz).
 - **USB and LSB are both in `engine.grc`.** The phasing arms meet at an Add, which on its own gives LSB
   (`real + H(imag)` cancels the upper sideband). The Multiply Const before it is `sideband`: -1 in USB (the default,
   so the render shows -1), +1 in LSB. Verified with synthetic I/Q: 63–68 dB opposite-sideband rejection.
@@ -178,7 +182,8 @@ Mac (from `websdr/sdr/`, `conda activate gr`; needs fastapi uvicorn websockets p
     python fake_engine.py & python server.py --key memagic     # no board, no GNU Radio
     python -m pytest tests/
 
-Pi (Docker; image built on the Pi, see `DOCKER.md`): `cd ~/websdr && docker compose up -d`, logs with
+Pi (Docker; image built on the Pi, code mounted from `~/websdr-src` so updates are copy + restart, see
+`DOCKER.md`): `cd ~/websdr && docker compose up -d`, logs with
 `docker compose logs -f bridge|engine|server`. `rp2040-rtltcp` is disabled, since only one program can open the
 board. OpenWebRX keeps the RTL dongle (it was stopped during the first deploy; still enabled at boot).
 

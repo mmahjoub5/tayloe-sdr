@@ -71,7 +71,7 @@ blocks:
 - name: volume
   id: variable
   parameters:
-    value: '-6'
+    value: '-22'
     comment: dB
   states:
     coordinate:
@@ -273,6 +273,19 @@ blocks:
     - 364
     rotation: 0
     state: enabled
+- name: iq_dc_blocker
+  id: dc_blocker_xx
+  parameters:
+    type: cc
+    length: '1024'
+    long_form: 'True'
+    comment: removes the board's DC line
+  states:
+    coordinate:
+    - 184
+    - 476
+    rotation: 0
+    state: enabled
 - name: logpwrfft_x_0
   id: logpwrfft_x
   parameters:
@@ -335,22 +348,6 @@ blocks:
     - 212
     rotation: 0
     state: enabled
-- name: am_agc
-  id: analog_agc2_xx
-  parameters:
-    type: complex
-    attack_rate: 1e-3
-    decay_rate: 1e-4
-    reference: '1.0'
-    gain: '1.0'
-    max_gain: 1e6
-    comment: 'slow: follows the carrier'
-  states:
-    coordinate:
-    - 568
-    - 208
-    rotation: 0
-    state: enabled
 - name: analog_am_demod_cf_0
   id: analog_am_demod_cf
   parameters:
@@ -377,21 +374,6 @@ blocks:
     coordinate:
     - 344
     - 388
-    rotation: 0
-    state: enabled
-- name: ssb_agc
-  id: analog_agc2_xx
-  parameters:
-    type: complex
-    attack_rate: 7e-2
-    decay_rate: 1e-3
-    reference: '0.3'
-    gain: '1.0'
-    max_gain: 1e6
-  states:
-    coordinate:
-    - 568
-    - 384
     rotation: 0
     state: enabled
 - name: blocks_complex_to_real_0
@@ -559,11 +541,15 @@ blocks:
     rotation: 0
     state: enabled
 connections:
+- - board_tuner
+  - '0'
+  - iq_dc_blocker
+  - '0'
 - - zeromq_sub_source_0
   - '0'
   - board_tuner
   - '0'
-- - board_tuner
+- - iq_dc_blocker
   - '0'
   - logpwrfft_x_0
   - '0'
@@ -575,15 +561,11 @@ connections:
   - '0'
   - waterfall_out
   - '0'
-- - board_tuner
+- - iq_dc_blocker
   - '0'
   - am_xlate
   - '0'
 - - am_xlate
-  - '0'
-  - am_agc
-  - '0'
-- - am_agc
   - '0'
   - analog_am_demod_cf_0
   - '0'
@@ -591,19 +573,15 @@ connections:
   - '0'
   - demod_select
   - '0'
-- - board_tuner
+- - iq_dc_blocker
   - '0'
   - ssb_xlate
   - '0'
 - - ssb_xlate
   - '0'
-  - ssb_agc
-  - '0'
-- - ssb_agc
-  - '0'
   - blocks_complex_to_real_0
   - '0'
-- - ssb_agc
+- - ssb_xlate
   - '0'
   - blocks_complex_to_imag_0
   - '0'
