@@ -36,6 +36,7 @@ FULL_SCALE = 1 << 23        # 24-bit samples -> roughly +/-1.0
 CAPTURE_RATE = 48000        # capture(): one burst into board RAM
 STREAM_RATE = 24000         # stream(): ADC_DECIM 2 in the firmware
 STREAM_DECIM = 2            # stream()'s default; 1 sends the full CAPTURE_RATE
+STREAM_BITS = 24           # stream()'s frame format: 24 packs 6 B/frame (firmware with `adc stats`), 32 sends int32 pairs
 
 MAX_CAPTURE = 8192          # ADC_MAX_CAPTURE in audio_adc.h
 STREAM_CHUNK_S = 120        # the firmware's per-stream limit

@@ -170,11 +170,15 @@ uint16_t AudioAdc::captureRaw(int32_t *dst, uint16_t frames, uint32_t timeoutMs)
   return got;
 }
 
-uint32_t AudioAdc::streamRaw(uint32_t frames, uint8_t decim, uint32_t timeoutMs)
+uint32_t AudioAdc::streamRaw(uint32_t frames, uint8_t decim, uint8_t bits, uint32_t timeoutMs)
 {
   if (!started) {
     return 0;
   }
+
+  static uint8_t ring[ADC_STREAM_RING];
+  const uint32_t frameBytes = (bits == 24) ? 6 : 8;
+  uint32_t head = 0, tail = 0, used = 0;
 
   pio_sm_set_enabled(pio, sm, false);
   pio_sm_clear_fifos(pio, sm);
@@ -184,39 +188,75 @@ uint32_t AudioAdc::streamRaw(uint32_t frames, uint8_t decim, uint32_t timeoutMs)
 
   int32_t  accI = 0, accQ = 0;
   uint8_t  n = 0;
-  uint32_t sent = 0;
+  uint32_t produced = 0, overruns = 0;
   uint32_t deadline = millis() + timeoutMs;
 
-  while (sent < frames) {
-    if (pio_sm_get_rx_fifo_level(pio, sm) >= 2) {
+  while (true) {
+    // Drain the ADC first: its FIFO holds only a few frames, so it must never wait on USB.
+    while (produced < frames && pio_sm_get_rx_fifo_level(pio, sm) >= 2) {
       accI += (int32_t)(pio_sm_get(pio, sm) << 8) >> 8;
       accQ += (int32_t)(pio_sm_get(pio, sm) << 8) >> 8;
-
-      if (++n == decim) {
-        int32_t out[2] = { accI / decim, accQ / decim };
-        Serial.write((const uint8_t *)out, sizeof(out));
-        accI = accQ = 0;
-        n = 0;
-        sent++;
-      }
-
-      // Only the absence of samples is a timeout; a long stream is not.
       deadline = millis() + timeoutMs;
-
-      // Any byte from the host aborts, so the CLI can be reached again without
-      // waiting out the whole stream -- that is what makes retuning possible
-      // mid-listen. Checked per frame rather than per sample to keep the inner
-      // path short.
-      if ((sent & 0xFF) == 0 && Serial.available()) {
-        break;
+      if (++n < decim) {
+        continue;
       }
-      continue;
+
+      int32_t i = accI / decim, q = accQ / decim;
+      accI = accQ = 0;
+      n = 0;
+      produced++;
+
+      if (used + frameBytes > ADC_STREAM_RING) {
+        overruns++;
+        continue;
+      }
+      uint8_t *p = ring + head;
+      if (frameBytes == 6) {
+        p[0] = i; p[1] = i >> 8; p[2] = i >> 16;
+        p[3] = q; p[4] = q >> 8; p[5] = q >> 16;
+      } else {
+        memcpy(p, &i, 4);
+        memcpy(p + 4, &q, 4);
+      }
+      head += frameBytes;
+      if (head == ADC_STREAM_RING) {
+        head = 0;
+      }
+      used += frameBytes;
     }
 
-    if ((int32_t)(millis() - deadline) >= 0) {
+    // Then give USB only what it has room for, so this never blocks.
+    if (used > 0) {
+      int room = Serial.availableForWrite();
+      if (room > 0) {
+        uint32_t len = min(min(used, ADC_STREAM_RING - tail), (uint32_t)room);
+        Serial.write(ring + tail, len);
+        tail += len;
+        if (tail == ADC_STREAM_RING) {
+          tail = 0;
+        }
+        used -= len;
+      }
+    }
+
+    if (produced >= frames && used == 0) {
+      break;
+    }
+
+    // Any byte from the host aborts, so the CLI can be reached again without
+    // waiting out the whole stream -- that is what makes retuning possible
+    // mid-listen.
+    if (Serial.available()) {
+      break;
+    }
+
+    // Only the absence of samples is a timeout; a long stream is not.
+    if (produced < frames && (int32_t)(millis() - deadline) >= 0) {
       break;
     }
   }
 
-  return sent;
+  lastOverruns = overruns;
+  lastProduced = produced;
+  return produced;
 }

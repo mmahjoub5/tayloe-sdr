@@ -64,6 +64,10 @@ enum class AdcStart {
 // is 64 KB, about 0.17 s at 48 kHz.
 #define ADC_MAX_CAPTURE 8192
 
+// streamRaw's buffer between the ADC and USB: about 0.2 s at 24 kHz packed. A USB stall shorter than this
+// costs no samples. A multiple of both frame sizes (6 and 8 bytes), so a frame never wraps.
+#define ADC_STREAM_RING 30720
+
 struct AdcCapture {
   uint16_t frames;        // frames actually read
   bool     timedOut;      // gave up waiting for clocks
@@ -93,11 +97,16 @@ public:
   // instead of only tracking min/max. Returns the frames actually stored.
   uint16_t captureRaw(int32_t *dst, uint16_t frames, uint32_t timeoutMs = 500);
 
-  // Decimate by `decim` and write straight to Serial for `frames` output
-  // frames. Nothing is buffered, so this runs for as long as asked without
-  // needing RAM proportional to the duration. Returns frames actually sent.
-  uint32_t streamRaw(uint32_t frames, uint8_t decim = ADC_DECIM,
+  // Decimate by `decim` and send `frames` output frames to Serial, as int32 pairs (bits 32, 8 B/frame) or
+  // packed little-endian 24-bit pairs (bits 24, 6 B/frame). The ADC is always drained into a ring buffer and
+  // USB only gets what it has room for, so a slow host costs overruns (counted, see streamOverruns) rather
+  // than silently dropped ADC samples. Returns frames actually produced.
+  uint32_t streamRaw(uint32_t frames, uint8_t decim = ADC_DECIM, uint8_t bits = 32,
                      uint32_t timeoutMs = 2000);
+
+  // Frames the last stream dropped because the ring was full, and frames it produced.
+  uint32_t streamOverruns() const { return lastOverruns; }
+  uint32_t streamProduced() const { return lastProduced; }
 
   uint32_t streamRate(uint8_t decim = ADC_DECIM) const { return sampleRate / decim; }
 
@@ -108,4 +117,6 @@ private:
   uint         offset = 0;
   bool         started = false;
   uint32_t     sampleRate = ADC_DEFAULT_RATE;
+  uint32_t     lastOverruns = 0;
+  uint32_t     lastProduced = 0;
 };

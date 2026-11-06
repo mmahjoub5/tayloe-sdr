@@ -31,6 +31,7 @@ from .hardware import (
     FULL_SCALE,
     OFFSET_HZ,
     PHASES,
+    STREAM_BITS,
     STREAM_DECIM,
     STREAM_RATE,
     TAYLOE_DIV,
@@ -49,7 +50,7 @@ def __getattr__(name):
 __all__ = [
     "RadioBoard", "to_complex", "find_port", "DEFAULT_PORT",
     "BASEBAND_FC_EQ", "BASEBAND_FC_MLA30", "BOARD_FLOOR_DBFS", "CAPTURE_RATE",
-    "CSAMP", "FULL_SCALE", "OFFSET_HZ", "PHASES", "STREAM_DECIM", "STREAM_RATE", "TAYLOE_DIV",
+    "CSAMP", "FULL_SCALE", "OFFSET_HZ", "PHASES", "STREAM_BITS", "STREAM_DECIM", "STREAM_RATE", "TAYLOE_DIV",
     "carrier_power", "channel_filter", "demod", "equalize", "iq_correct",
     "iq_correct_carrier", "modulation_spectrum", "sideband_filter", "spectrum",
     "station_score",
