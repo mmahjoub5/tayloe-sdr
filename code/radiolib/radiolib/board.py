@@ -11,6 +11,7 @@ from .hardware import (
     MAX_CAPTURE,
     OFFSET_HZ,
     STREAM_CHUNK_S,
+    STREAM_BITS,
     STREAM_DECIM,
     TAYLOE_DIV,
     XTAL_CORR_PPB,
@@ -36,20 +37,27 @@ def find_port():
     return found[0]
 
 
-def to_complex(raw, swap=True, scale=FULL_SCALE):
-    """Interleaved little-endian int32 pairs -> normalised complex samples.
+def to_complex(raw, swap=True, scale=FULL_SCALE, bits=32):
+    """Interleaved little-endian I/Q pairs -> normalised complex samples.
 
-    Returns (samples, leftover). Serial reads do not land on 8-byte boundaries,
-    so any partial sample is handed back to be prepended to the next read --
-    dropping it would shift I and Q against each other for good.
+    bits 32: int32 pairs (8 bytes a frame); bits 24: packed signed 24-bit pairs
+    (6 bytes a frame). Returns (samples, leftover). Serial reads do not land on
+    frame boundaries, so any partial frame is handed back to be prepended to the
+    next read -- dropping it would shift I and Q against each other for good.
     """
-    usable = (len(raw) // 8) * 8
+    frame = 6 if bits == 24 else 8
+    usable = (len(raw) // frame) * frame
     leftover = bytes(raw[usable:])
 
     if not usable:
         return np.empty(0, dtype=np.complex128), leftover
 
-    flat = np.frombuffer(bytes(raw[:usable]), dtype="<i4").astype(np.float64)
+    if bits == 24:
+        b = np.frombuffer(bytes(raw[:usable]), dtype=np.uint8).reshape(-1, 3).astype(np.int32)
+        flat = (b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)).astype(np.float64)
+        flat[flat >= 1 << 23] -= 1 << 24
+    else:
+        flat = np.frombuffer(bytes(raw[:usable]), dtype="<i4").astype(np.float64)
     iq = (flat[0::2] + 1j * flat[1::2]) / scale
 
     # The board's I and Q are swapped relative to the usual sense, so the
@@ -62,12 +70,14 @@ class RadioBoard:
     """One serial connection to the board, plus the protocol on top of it."""
 
     def __init__(self, port=DEFAULT_PORT, baud=115200, timeout=1.0, swap=True,
-                 offset=OFFSET_HZ, corr=XTAL_CORR_PPB, decim=STREAM_DECIM):
+                 offset=OFFSET_HZ, corr=XTAL_CORR_PPB, decim=STREAM_DECIM, bits=STREAM_BITS):
         self.ser = serial.Serial(port or find_port(), baud, timeout=timeout)
         self.swap = swap
         # stream() sample rate is CAPTURE_RATE / decim: 2 gives 24 kHz (the
         # firmware sums pairs, so the outer half aliases), 1 the full 48 kHz.
         self.decim = int(decim)
+        # stream() asks for this frame format; firmware without 24-bit support sends 32 and says so.
+        self.bits = int(bits)
         # Kept on the instance so tuning and demodulation cannot disagree about
         # where the carrier was placed.
         self.offset = float(offset)
@@ -135,8 +145,10 @@ class RadioBoard:
                 header += chunk
             elif time.time() > deadline:
                 raise RuntimeError(f"no {keyword.decode()} header, got: {header!r}")
-        parts = header.decode(errors="replace").strip().split()
-        return int(parts[-2]), int(parts[-1])
+        parts = header.decode(errors="replace").split()
+        # The numbers after the keyword: frames and rate, plus the bits for a 24-bit stream. Anything the CLI
+        # printed before the keyword (an echo, a prompt) is skipped.
+        return [int(x) for x in parts[parts.index(keyword.decode()) + 1:]]
 
     def capture(self, frames=4096):
         """One burst into the board's RAM, then transferred. Returns (iq, rate)."""
@@ -144,7 +156,7 @@ class RadioBoard:
         self.ser.reset_input_buffer()
         self.ser.write(f"adc capture {frames}\n".encode())
 
-        got, rate = self._read_header(b"CAPTURE")
+        got, rate = self._read_header(b"CAPTURE")[:2]
         if got == 0:
             raise RuntimeError("board captured 0 frames -- is the ADC started?")
 
@@ -191,10 +203,11 @@ class RadioBoard:
                 return
 
             self.ser.reset_input_buffer()
-            self.ser.write(f"adc stream {int(max(1, chunk))} {self.decim}\n".encode())
-            frames, rate = self._read_header(b"STREAM")
+            self.ser.write(f"adc stream {int(max(1, chunk))} {self.decim} {self.bits}\n".encode())
+            frames, rate, *rest = self._read_header(b"STREAM")
+            bits = rest[0] if rest else 32
 
-            want = frames * 8
+            want = frames * (6 if bits == 24 else 8)
             got = 0
             done = False
             try:
@@ -204,7 +217,7 @@ class RadioBoard:
                         break                  # board stopped early
                     got += len(raw)
 
-                    iq, leftover = to_complex(leftover + raw, self.swap)
+                    iq, leftover = to_complex(leftover + raw, self.swap, bits=bits)
                     if len(iq):
                         yield iq, rate
                 done = True

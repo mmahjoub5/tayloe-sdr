@@ -42,7 +42,9 @@ static void cmdHelp()
   Serial.println("  adc stop             stop capture and scki");
   Serial.println("  adc read [frames]    read frames, report min/max per channel");
   Serial.println("  adc capture [frames] binary I/Q dump for the host");
-  Serial.println("  adc stream [secs] [decim]  continuous I/Q; decim 1 (48k) or 2 (24k)");
+  Serial.println("  adc stream [secs] [decim] [bits]  continuous I/Q; decim 1 (48k) or 2 (24k), bits 32 or 24");
+  Serial.println("  adc stats                  last stream's frames produced and overruns");
+  Serial.println("  bootsel              reboot into the UF2 bootloader (RPI-RP2 drive) to flash");
 }
 
 static void cmdGpio(const char *arg)
@@ -271,7 +273,7 @@ static void cmdInit(const char *pfTok, const char *corrTok)
   Serial.println(board.begin(load, 25000000, corr) ? "init ok" : "init failed");
 }
 
-static void cmdAdc(const char *sub, const char *arg, const char *arg2)
+static void cmdAdc(const char *sub, const char *arg, const char *arg2, const char *arg3)
 {
   if (sub == nullptr) {
     Serial.println("usage: adc start|stop|read");
@@ -358,15 +360,35 @@ static void cmdAdc(const char *sub, const char *arg, const char *arg2)
       return;
     }
 
+    long bits = 32;
+    if (arg3 != nullptr && (!parseNum(arg3, &bits) || (bits != 32 && bits != 24))) {
+      Serial.println("bits must be 32 or 24");
+      return;
+    }
+
+    // A 24-bit stream says so in a third number; a 32-bit header stays two numbers, as older hosts expect.
     uint32_t frames = (uint32_t)secs * adc.streamRate(decim);
     Serial.print("STREAM ");
     Serial.print(frames);
     Serial.print(" ");
-    Serial.println(adc.streamRate(decim));
+    if (bits == 24) {
+      Serial.print(adc.streamRate(decim));
+      Serial.println(" 24");
+    } else {
+      Serial.println(adc.streamRate(decim));
+    }
     Serial.flush();
 
-    adc.streamRaw(frames, decim);
+    adc.streamRaw(frames, decim, bits);
     Serial.flush();
+    return;
+  }
+
+  if (strcasecmp(sub, "stats") == 0) {
+    Serial.print("last stream: produced ");
+    Serial.print(adc.streamProduced());
+    Serial.print(" frames, overruns ");
+    Serial.println(adc.streamOverruns());
     return;
   }
 
@@ -418,6 +440,7 @@ void handleLine(char *line)
   char *a1 = strtok(nullptr, " \t");
   char *a2 = strtok(nullptr, " \t");
   char *a3 = strtok(nullptr, " \t");
+  char *a4 = strtok(nullptr, " \t");
 
   if (strcasecmp(cmd, "help") == 0) {
     cmdHelp();
@@ -438,10 +461,16 @@ void handleLine(char *line)
   } else if (strcasecmp(cmd, "init") == 0) {
     cmdInit(a1, a2);
   } else if (strcasecmp(cmd, "adc") == 0) {
-    cmdAdc(a1, a2, a3);
+    cmdAdc(a1, a2, a3, a4);
   } else if (strcasecmp(cmd, "reset") == 0) {
     board.resetPlls();
     Serial.println("plls reset");
+  } else if (strcasecmp(cmd, "bootsel") == 0) {
+    // A second remote way into the bootloader, besides opening the port at 1200 baud.
+    Serial.println("rebooting into the UF2 bootloader");
+    Serial.flush();
+    delay(100);
+    rp2040.rebootToBootloader();
   } else {
     Serial.print("unknown command: ");
     Serial.println(cmd);

@@ -7,6 +7,7 @@
 - The port is found automatically: `find_port()` picks the `/dev/cu.*` port with USB vendor ID `0x2E8A` (`RP2040_VID`). macOS names the port after the USB socket it's plugged into (`usbmodem101`, `usbmodem1101`, ...), so don't hardcode it. `DEFAULT_PORT` is `None`, meaning auto-detect.
 - Pass `port=` (or `--port` in `apps/rx.py` and `gnu-radio/iq_bridge.py`) only to choose between two RP2040 boards.
 - `RadioBoard(decim=2)` (or `board.decim`) picks the `stream()` rate: the firmware's `adc stream [secs] [decim]` sends 48 kHz / decim (`STREAM_DECIM = 2` in `hardware.py`, so 24 kHz by default). 48 kHz works from the Mac but not from the Pi 3B+, which can't read the board faster than ~192 KB/s.
+- `stream()` asks for packed 24-bit frames (`STREAM_BITS = 24`, 6 B/frame, 144 KB/s at 24 kHz) and reads the format from the header, so it still works with older firmware that only sends int32. `to_complex(raw, bits=24)` decodes them.
 - Only one program can open the port. "Resource busy" usually means the Arduino IDE's Serial Monitor (`serial-monitor`) still has it open.
 
 ## radiolib FT8 (`code/radiolib/radiolib/ft8/`)

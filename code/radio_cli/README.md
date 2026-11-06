@@ -28,7 +28,9 @@ from Si5351 **CLK0** at 256·fs — nothing downstream runs until that clock doe
 | `adc stop` | stop capture and SCKI |
 | `adc read [frames]` | read frames, report min/max per channel (1..4096, default 256) |
 | `adc capture [frames]` | binary I/Q dump for the host (1..8192, default 4096) |
-| `adc stream [secs] [decim]` | continuous I/Q (1..120 s, default 5); `decim` 2 = 24 kHz (default), 1 = full 48 kHz |
+| `adc stream [secs] [decim] [bits]` | continuous I/Q (1..120 s, default 5); `decim` 2 = 24 kHz (default), 1 = full 48 kHz; `bits` 32 (default) or 24 (packed, 6 B/frame) |
+| `adc stats` | the last stream's frames produced and overruns (frames dropped because the host read too slowly) |
+| `bootsel` | reboot into the UF2 bootloader (the `RPI-RP2` drive), to flash a `.uf2` without pressing BOOT |
 
 ## Pin map
 
@@ -49,12 +51,18 @@ from Si5351 **CLK0** at 256·fs — nothing downstream runs until that clock doe
 ## Binary output format
 
 Both dump commands print an ASCII header line, then raw bytes — interleaved
-little-endian **int32** I/Q pairs (24-bit samples, not scaled down):
+little-endian **int32** I/Q pairs (24-bit samples, not scaled down), or for `adc stream ... 24` packed
+little-endian signed 24-bit pairs (6 bytes a frame):
 
 ```
 CAPTURE <frames> <rate>      # adc capture
 STREAM  <frames> <rate>      # adc stream, rate is 48000 / decim
+STREAM  <frames> <rate> 24   # adc stream ... 24
 ```
+
+`adc stream` drains the ADC into a 30 KB ring buffer and writes to USB only what it has room for, so a slow
+host never stalls the ADC. If the ring fills, whole frames are dropped and counted; `adc stats` shows them.
+24-bit frames need 144 KB/s at 24 kHz, which leaves headroom on a Pi 3B+ (it reads ~192 KB/s at most).
 
 ## Typical session
 
