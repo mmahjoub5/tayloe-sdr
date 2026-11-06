@@ -1,9 +1,9 @@
-# The WebSDR on the Pi: three services from one image (see Dockerfile and DOCKER.md).
+# The WebSDR on the Pi: four services from one image (see Dockerfile and DOCKER.md).
 # Host networking keeps every internal port on 127.0.0.1 as in PROTOCOL.md; the page is on :8090.
 # Put SDR_KEY=<key> in a .env file next to this one.
 #
 # The code is mounted from ~/websdr-src (copied over from the Mac), not baked in, so an update is: copy, then
-# `docker compose restart engine server bridge`. Rebuild the image only when packages change.
+# `docker compose restart engine server bridge ft8`. Rebuild the image only when packages change.
 
 x-websdr: &websdr
   image: websdr:latest
@@ -29,6 +29,13 @@ services:
     volumes:
       - ../websdr-src/websdr/sdr:/opt/websdr/sdr:ro
     depends_on: [bridge]
+
+  ft8:
+    <<: *websdr
+    command: python3 sdr/ft8_service.py
+    volumes:
+      - ../websdr-src/websdr/sdr:/opt/websdr/sdr:ro
+    depends_on: [engine]
 
   server:
     <<: *websdr

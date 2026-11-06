@@ -65,6 +65,23 @@ def connect(engine, key=None, streams=None):
     return TestClient(server.create_app(engine, key, streams or {}))
 
 
+def test_ft8_slots_relayed_and_replayed(pub):
+    sock, address = pub
+    slot = {"slot": 1800000000, "dial": 7074000, "seconds": 0.2,
+            "decodes": [{"hz": 1200, "dt": 0.5, "score": 25, "text": "CQ K1ABC FN42"}]}
+    app = server.create_app(FakeEngine(), None, {}, address)
+    with TestClient(app) as client, client.websocket_connect("/ws") as ws:
+        ws.receive_text()
+        deadline = time.time() + 5
+        while not app.state.hub.ft8 and time.time() < deadline:     # PUB drops until the relay has subscribed
+            sock.send_string(json.dumps(slot))
+            time.sleep(0.05)
+        assert json.loads(ws.receive_text()) == {"ft8": slot}
+        with client.websocket_connect("/ws") as late:
+            late.receive_text()
+            assert json.loads(late.receive_text()) == {"ft8": slot}
+
+
 def test_state_on_connect():
     with connect(FakeEngine()) as client, client.websocket_connect("/ws") as ws:
         assert json.loads(ws.receive_text()) == {

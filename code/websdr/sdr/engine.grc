@@ -493,7 +493,7 @@ blocks:
     vlen: '1'
   states:
     coordinate:
-    - 1800
+    - 1984
     - 336
     rotation: 0
     state: enabled
@@ -507,7 +507,7 @@ blocks:
     fbw: '0'
   states:
     coordinate:
-    - 1992
+    - 1800
     - 320
     rotation: 0
     state: enabled
@@ -520,6 +520,25 @@ blocks:
     coordinate:
     - 2160
     - 336
+    rotation: 0
+    state: enabled
+- name: ft8_out
+  id: zeromq_pub_sink
+  parameters:
+    type: float
+    vlen: '1'
+    address: tcp://127.0.0.1:5562
+    bind: 'True'
+    timeout: '100'
+    pass_tags: 'False'
+    hwm: '-1'
+    drop_on_hwm: 'True'
+    key: ''
+    comment: for FT8, before the volume
+  states:
+    coordinate:
+    - 1984
+    - 460
     rotation: 0
     state: enabled
 - name: audio_out
@@ -619,15 +638,19 @@ connections:
   - '0'
 - - dc_blocker_xx_0
   - '0'
-  - blocks_multiply_const_vxx_0
-  - '0'
-- - blocks_multiply_const_vxx_0
-  - '0'
   - rational_resampler_xxx_0
   - '0'
 - - rational_resampler_xxx_0
   - '0'
+  - blocks_multiply_const_vxx_0
+  - '0'
+- - blocks_multiply_const_vxx_0
+  - '0'
   - blocks_float_to_short_0
+  - '0'
+- - rational_resampler_xxx_0
+  - '0'
+  - ft8_out
   - '0'
 - - blocks_float_to_short_0
   - '0'

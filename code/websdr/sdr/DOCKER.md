@@ -1,6 +1,6 @@
 # WebSDR on the Pi with Docker
 
-One image (`Dockerfile`), three services (`docker-compose.yml`: bridge, engine, server). No registry.
+One image (`Dockerfile`), four services (`docker-compose.yml`: bridge, engine, ft8, server). No registry.
 
 ## Build on the Pi (from `code/` on the Mac)
 
@@ -35,8 +35,8 @@ OpenWebRX keeps the RTL dongle; its "Tayloe board" device stops working while th
 
 The code isn't baked into the image: compose mounts `~/websdr-src` (bridge script, `websdr/sdr/`) and the engine
 compiles `engine.grc` when it starts (~10 s). So a code change is the `tar | ssh` copy above, then
-`docker compose up -d --force-recreate engine server` (and `bridge` if `iq_bridge.py` changed); no `docker build`.
-Rebuild the image only when packages or radiolib change. Services restart on their own after a crash or a reboot. The bridge exits if the board is unplugged and restarts until it's back;
+`docker compose up -d --force-recreate engine ft8 server` (and `bridge` if `iq_bridge.py` changed); no `docker build`.
+Rebuild the image only when packages, radiolib or the pinned ft8_lib commit change. Services restart on their own after a crash or a reboot. The bridge exits if the board is unplugged and restarts until it's back;
 the engine's Board Tuner repeats its frequency every 3 s, so the board comes back tuned.
 
 Public access: point cloudflared at `http://localhost:8090`.

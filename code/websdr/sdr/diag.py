@@ -14,7 +14,7 @@ INTERVAL_S = 2.0
 HISTORY = 900                               # samples kept: 30 min at INTERVAL_S
 
 # Our processes, found by the file name of the script they run; the server is always this process.
-PROCESSES = {"bridge": "iq_bridge.py", "engine": "engine.py"}
+PROCESSES = {"bridge": "iq_bridge.py", "engine": "engine.py", "ft8": "ft8_service.py"}
 
 # vcgencmd get_throttled bits: now, and since boot.
 THROTTLE_BITS = {0: "under-voltage", 1: "frequency capped", 2: "throttled", 3: "soft temperature limit"}

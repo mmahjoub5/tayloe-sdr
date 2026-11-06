@@ -175,6 +175,14 @@ board ─USB─▶ iq_bridge.py ─ZMQ :5555─▶ engine.grc ─ZMQ :5560 water
   processes; 2 s samples, 30 min kept).
 - `static/`: the radio page (`index.html`, `app.js`, `audio-worklet.js`, `style.css`) and `diag.html`.
 - `fake_engine.py`: pure-Python stand-in for the engine, for page work without GNU Radio.
+- `ft8_service.py`: its own container. Decodes the engine's pre-volume audio (:5562) at each UTC slot with ft8_lib's
+  `decode_ft8` (a subprocess; built into the image at a fixed commit), only in USB on an FT8 frequency for the whole
+  slot, and publishes the messages (:5563). `server.py` relays them and replays the last 40 slots to a new page.
+  We use ft8_lib because radiolib's decoder took 36–38 s per slot on the Pi (ft8_lib: 0.13–0.25 s, measured on
+  synthetic slots; it found 18/18 down to -18 dB and 0/5 at -19..-23 dB, where `jt9` found 2/5 in 3.5–18 s).
+  Each slot starts a new `decode_ft8`, so it forgets callsigns between slots and hashed ones print as `<...>`.
+  Its printed "SNR" is only the sync score / 2, so the page shows the score. If it misses too much on a busy band,
+  `jt9 -8` from the `wsjtx` package (51 MB) is the alternative; only the command and `parse_output` would change.
 
 Mac (from `websdr/sdr/`, `conda activate gr`; needs fastapi uvicorn websockets pyzmq psutil):
 
@@ -184,7 +192,7 @@ Mac (from `websdr/sdr/`, `conda activate gr`; needs fastapi uvicorn websockets p
 
 Pi (Docker; image built on the Pi, code mounted from `~/websdr-src` so updates are copy + restart, see
 `DOCKER.md`): `cd ~/websdr && docker compose up -d`, logs with
-`docker compose logs -f bridge|engine|server`. `rp2040-rtltcp` is disabled, since only one program can open the
+`docker compose logs -f bridge|engine|ft8|server`. `rp2040-rtltcp` is disabled, since only one program can open the
 board. OpenWebRX keeps the RTL dongle (it was stopped during the first deploy; still enabled at boot).
 
 ### SDR hardware
@@ -217,11 +225,9 @@ DHCP reservation.
 
 ## TODOs
 
-- **FT8 in the WebSDR (the last feature before the project is retired):** decode in the WebSDR on the Pi and show
-  messages on the page. `engine.grc` gets a 12 kHz audio feed taken before the volume; a separate `ft8_service.py`
-  container decodes at each UTC slot, only in USB on a known FT8 frequency; `server.py` relays decodes and keeps recent
-  ones; the page gets a table. radiolib needs `unpack77` (payload to text) and the image needs `ldpc`. Measure decode
-  time on the Pi first. The board heard almost nothing on 40 m when last checked, so live decodes depend on that too.
+- **HF receive sensitivity:** the board does hear 40 m (live on 7.074 MHz, 2026-11-05 late evening: 7 different messages from 3
+  stations in 16 slots, all in the :15/:45 slots; sync scores 10-25), but the waterfall barely shows it (under ~7 dB over the floor).
+  Compare with a known-good receiver on the same antenna to see how much the front end or the antenna is losing.
 - **LSB-only board flowgraphs:** `gnu-radio/board/ssb_receiver.grc` and `ft8_receiver.grc` add the phasing arms, which
   gives LSB, so `ft8_receiver` hears FT8 (USB) mirrored. Fix with a -1 Multiply Const on the Hilbert arm (as in
   `websdr/sdr/engine.grc`) or a Subtract. Their pasted Board Tuner is also an old copy of `gr_tuner_block.py`.

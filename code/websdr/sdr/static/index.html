@@ -72,6 +72,16 @@
       <div class="presets" id="presets"></div>
     </div>
   </section>
+
+  <section class="ft8">
+    <div class="ft8-head"><h2>FT8</h2><span id="ft8-status" class="dim">–</span><button id="ft8-clear" title="Clear the table in this browser">Clear</button></div>
+    <div class="ft8-table">
+      <table>
+        <thead><tr><th>UTC</th><th title="Sync score from the decoder, not an SNR">Score</th><th>Audio Hz</th><th>kHz</th><th>Message</th></tr></thead>
+        <tbody id="ft8-rows"></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

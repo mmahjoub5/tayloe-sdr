@@ -78,7 +78,7 @@ function connect() {
   setStatus("connecting", "connecting…");
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
-  ws.onopen = () => { backoff = 1000; };
+  ws.onopen = () => { backoff = 1000; $("ft8-rows").replaceChildren(); };   // the server replays recent slots
   ws.onmessage = (e) => {
     if (typeof e.data === "string") return onText(JSON.parse(e.data));
     lastFrame = performance.now();
@@ -94,7 +94,9 @@ function connect() {
 }
 
 function onText(msg) {
-  if (msg.state) {
+  if (msg.ft8) {
+    onFt8(msg.ft8);
+  } else if (msg.state) {
     applyState(msg.state);
     setStatus("live", "live");
   } else if (msg.error) {
@@ -257,6 +259,48 @@ PRESETS.forEach((p) => {
   });
   $("presets").appendChild(b);
 });
+
+// ---------- FT8 ----------
+
+const FT8_MAX_ROWS = 200;
+const FT8_STALE_S = 40;             // no slot for this long means the radio isn't on an FT8 frequency
+let ft8Slot = null;                 // the latest slot received
+let ft8ClearedAt = +localStorage.getItem("ft8ClearedAt") || 0;     // slots up to this one stay hidden; the server replays them
+
+function utc(unix) { return new Date(unix * 1000).toISOString().slice(11, 19); }
+
+function onFt8(slot) {
+  ft8Slot = slot;
+  renderFt8Status();
+  if (slot.slot <= ft8ClearedAt) return;
+  const body = $("ft8-rows");
+  for (const d of [...slot.decodes].sort((a, b) => a.score - b.score)) {
+    const tr = document.createElement("tr");
+    tr.classList.toggle("cq", d.text.startsWith("CQ "));
+    // textContent: these strings come off the air.
+    for (const cell of [utc(slot.slot), d.score, d.hz, ((slot.dial + d.hz) / 1000).toFixed(3), d.text]) {
+      tr.insertCell().textContent = cell;
+    }
+    body.prepend(tr);
+  }
+  while (body.rows.length > FT8_MAX_ROWS) body.deleteRow(-1);
+}
+
+function renderFt8Status() {
+  const live = ft8Slot && Date.now() / 1000 - ft8Slot.slot < FT8_STALE_S;
+  $("ft8-status").textContent = live
+    ? `${utc(ft8Slot.slot)} UTC: ${ft8Slot.decodes.length} decoded in ${ft8Slot.seconds} s on ${(ft8Slot.dial / 1000).toFixed(0)} kHz`
+    : "idle: decodes in USB on an FT8 frequency, after one full slot";
+}
+$("ft8-clear").addEventListener("click", () => {
+  $("ft8-rows").replaceChildren();
+  if (ft8Slot) {
+    ft8ClearedAt = ft8Slot.slot;
+    localStorage.setItem("ft8ClearedAt", ft8ClearedAt);
+  }
+});
+setInterval(renderFt8Status, 5000);
+renderFt8Status();
 
 // ---------- waterfall ----------
 

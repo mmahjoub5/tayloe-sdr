@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from xmlrpc.client import ServerProxy
@@ -30,6 +31,9 @@ STREAMS = {
 # Flowgraph variables a browser may set; each is set_<name>/get_<name> on the engine.
 CONTROLS = ("center", "mode", "offset", "volume")
 
+FT8_FEED = "tcp://127.0.0.1:5563"           # ft8_service.py's decoded slots, JSON
+FT8_SLOTS_KEPT = 40                         # sent to a page when it connects; 10 minutes
+
 QUEUE_FRAMES = 64                           # per listener; a slow one drops frames, not the others
 
 
@@ -50,6 +54,7 @@ class Hub:
         self.bytes = {kind: 0 for kind in STREAMS}      # received per stream, for the diagnostics page
         self.dropped = 0                                # frames dropped for slow listeners
         self.lock = asyncio.Lock()          # ServerProxy isn't thread-safe; one call at a time
+        self.ft8 = deque(maxlen=FT8_SLOTS_KEPT)         # recent {"ft8": ...} messages, for new listeners
 
     def broadcast(self, frame: bytes | str):
         """
@@ -144,6 +149,27 @@ async def relay(hub: Hub, ctx: zmq.asyncio.Context, kind: int, endpoint: str):
         sock.close(linger=0)
 
 
+async def relay_ft8(hub: Hub, ctx: zmq.asyncio.Context, endpoint: str):
+    """
+    Forward each slot from ft8_service.py to every listener and keep the recent ones.
+
+    Args:
+        hub (Hub): the listeners
+        ctx (zmq.asyncio.Context): shared ZMQ context
+        endpoint (str): ft8_service.py's PUB address
+    """
+    sock = ctx.socket(zmq.SUB)
+    sock.setsockopt(zmq.SUBSCRIBE, b"")
+    sock.connect(endpoint)
+    try:
+        while True:
+            frame = '{"ft8": ' + await sock.recv_string() + "}"
+            hub.ft8.append(frame)
+            hub.broadcast(frame)
+    finally:
+        sock.close(linger=0)
+
+
 async def sample(hub: Hub, diag: Diagnostics):
     """
     Add a diagnostics sample every INTERVAL_S, with the server's own stream rates and engine state.
@@ -176,7 +202,7 @@ async def sample(hub: Hub, diag: Diagnostics):
         await asyncio.to_thread(diag.sample, app)
 
 
-def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS) -> FastAPI:
+def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS, ft8: str = FT8_FEED) -> FastAPI:
     """
     Build the app around an engine.
 
@@ -184,6 +210,7 @@ def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS
         engine (object): has set_<name>/get_<name> for every name in CONTROLS
         key (str | None): needed to set controls; None lets anyone set them
         streams (dict[int, str]): type byte -> ZMQ PUB address
+        ft8 (str): ft8_service.py's ZMQ PUB address
 
     Returns:
         FastAPI: the app, serving /, /ws and /api/diag
@@ -195,6 +222,7 @@ def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS
     async def lifespan(app: FastAPI):
         ctx = zmq.asyncio.Context()
         tasks = [asyncio.create_task(relay(hub, ctx, kind, ep)) for kind, ep in streams.items()]
+        tasks.append(asyncio.create_task(relay_ft8(hub, ctx, ft8)))
         tasks.append(asyncio.create_task(sample(hub, diag)))
         yield
         for t in tasks:
@@ -217,6 +245,8 @@ def create_app(engine, key: str | None = None, streams: dict[int, str] = STREAMS
         await sock.accept()
         q = asyncio.Queue(QUEUE_FRAMES)
         await q.put(await hub.state())
+        for frame in hub.ft8:
+            q.put_nowait(frame)
         hub.queues.add(q)
 
         async def send():
