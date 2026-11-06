@@ -18,6 +18,7 @@ services:
     volumes:
       - /dev:/dev
       - ../websdr-src/gnu-radio/iq_bridge.py:/opt/websdr/iq_bridge.py:ro
+      - ../websdr-src/radiolib/radiolib:/usr/local/lib/python3.13/dist-packages/radiolib:ro
     device_cgroup_rules:
       - "c 166:* rmw"                       # USB CDC serial (ttyACM*)
 
