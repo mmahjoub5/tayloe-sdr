@@ -217,6 +217,11 @@ DHCP reservation.
 
 ## TODOs
 
+- **FT8 in the WebSDR (the last feature before the project is retired):** decode in the WebSDR on the Pi and show
+  messages on the page. `engine.grc` gets a 12 kHz audio feed taken before the volume; a separate `ft8_service.py`
+  container decodes at each UTC slot, only in USB on a known FT8 frequency; `server.py` relays decodes and keeps recent
+  ones; the page gets a table. radiolib needs `unpack77` (payload to text) and the image needs `ldpc`. Measure decode
+  time on the Pi first. The board heard almost nothing on 40 m when last checked, so live decodes depend on that too.
 - **LSB-only board flowgraphs:** `gnu-radio/board/ssb_receiver.grc` and `ft8_receiver.grc` add the phasing arms, which
   gives LSB, so `ft8_receiver` hears FT8 (USB) mirrored. Fix with a -1 Multiply Const on the Hilbert arm (as in
   `websdr/sdr/engine.grc`) or a Subtract. Their pasted Board Tuner is also an old copy of `gr_tuner_block.py`.
@@ -225,12 +230,7 @@ DHCP reservation.
 - **RTL-SDR in our WebSDR:** a second engine (`engine_rtl.grc`, gr-osmosdr at ~1.024 MS/s, WFM/NBFM), per-device
   relays in the server, a device switch in the page. Measure CPU on the Pi first. Lets OpenWebRX go.
 
-- **Firmware: packed 24-bit stream + half-band decimator** (`radio_cli/audio_adc.cpp`, `radiolib/radiolib/board.py`).
-  On the Pi 3B+ the board (USB full speed, behind the built-in hub on `dwc_otg`) reads at most ~192 KB/s, measured with
-  raw `os.read` (1500 reads/s × 128 B). `adc stream` at 48 kHz needs 384 KB/s and at 24 kHz exactly 192 KB/s, so
-  48 kHz stalls the firmware (half the frames, corrupt data) and 24 kHz has no margin. The Mac reads 48 kHz fine.
-  - Send each sample as 3 bytes instead of an int32 (6 B/frame): 24 kHz becomes 144 KB/s, ~25% headroom, lossless.
-    Needs a new header or flag so `to_complex` knows the format.
-  - Replace the 2-sample boxcar (`ADC_DECIM`) with a half-band FIR decimate-by-2, so the 24 kHz stream is clean to
-    about ±10 kHz instead of aliasing the outer half.
-  - Then check whether the bridge's rare sample spikes go away.
+- **Firmware: half-band decimator** (`radio_cli/audio_adc.cpp`). Replace the 2-sample boxcar (`ADC_DECIM`) with a
+  half-band FIR decimate-by-2, so the 24 kHz stream is clean to about ±10 kHz instead of aliasing the outer half. Then
+  check `adc stats` for overruns and whether the rare sample spikes go away. (Packed 24-bit frames and the ring buffer
+  are done: 144 KB/s at 24 kHz, against the ~192 KB/s the Pi 3B+ can read from the board.)
