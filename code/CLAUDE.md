@@ -233,6 +233,10 @@ DHCP reservation.
   `websdr/sdr/engine.grc`) or a Subtract. Their pasted Board Tuner is also an old copy of `gr_tuner_block.py`.
 - **WebSDR audio batching:** the engine publishes ~190 small audio messages/s and the server forwards each one to every
   listener; batch to ~50 ms in `server.py` before relying on the Cloudflare link.
+- **Waterproof enclosure (next rev):** the radio + Pi enclosure (`meche/cad/pi_enclosure.py`, on the `pi-enclosure`
+  branch) is not sealed. Next rev: a gasket or O-ring groove at the base/lid joint, a sealed bulkhead SMA for the
+  antenna, cable glands (or sealed panel connectors) in place of the open power/HDMI/audio/SD cut-outs, and a breathable
+  membrane vent instead of the open vent slots (the Pi still needs to shed heat).
 - **RTL-SDR in our WebSDR:** a second engine (`engine_rtl.grc`, gr-osmosdr at ~1.024 MS/s, WFM/NBFM), per-device
   relays in the server, a device switch in the page. Measure CPU on the Pi first. Lets OpenWebRX go.
 
