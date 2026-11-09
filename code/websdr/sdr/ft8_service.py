@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from collections import deque
+from typing import Protocol, cast
 from xmlrpc.client import ServerProxy
 
 import numpy as np
@@ -32,6 +33,14 @@ WAV_DIR = "/dev/shm" if os.path.isdir("/dev/shm") else None     # RAM, so no SD 
 
 # 234500 +12.5 +0.48 1200 ~  CQ K1ABC FN42   (the second field is the sync score / 2, not an SNR)
 LINE = re.compile(r"^\d{6} ([+-]\d+\.\d) ([+-]\d+\.\d+) +(\d+) ~\s+(.+?)\s*$")
+
+
+class EngineRPC(Protocol):
+    """RPC methods exposed by the GNU Radio XML-RPC server."""
+
+    def get_center(self) -> float: ...
+    def get_offset(self) -> float: ...
+    def get_mode(self) -> int: ...
 
 
 def parse_output(text: str) -> list[dict]:
@@ -83,12 +92,12 @@ def decode_slot(audio: np.ndarray, decoder: str = DECODER) -> list[dict] | None:
     return parse_output(done.stdout)
 
 
-def tuned_state(engine) -> tuple | None:
+def tuned_state(engine: EngineRPC) -> tuple | None:
     """
     Read what the radio is tuned to.
 
     Args:
-        engine (object): has get_center, get_offset and get_mode, e.g. a ServerProxy
+        engine (EngineRPC): the engine's XML-RPC server, e.g. a ServerProxy
 
     Returns:
         tuple | None: (dial Hz, mode), or None if the engine isn't reachable
@@ -152,14 +161,14 @@ class AudioBuffer:
         return np.concatenate(self.chunks)[-self.keep:]
 
 
-def run(audio_addr: str, publish_addr: str, engine, decoder: str):
+def run(audio_addr: str, publish_addr: str, engine: EngineRPC, decoder: str):
     """
     Decode every slot until interrupted.
 
     Args:
         audio_addr (str): the engine's audio PUB address
         publish_addr (str): where to publish decodes
-        engine (object): has get_center, get_offset and get_mode
+        engine (EngineRPC): the engine's XML-RPC server
         decoder (str): the decode_ft8 executable
     """
     ctx = zmq.Context()
@@ -199,7 +208,9 @@ def main():
     ap.add_argument("--decoder", default=DECODER, help="the decode_ft8 executable")
     args = ap.parse_args()
     socket.setdefaulttimeout(3)             # a stuck engine must not stall the audio buffer
-    run(args.audio, args.publish, ServerProxy(args.engine, allow_none=True), args.decoder)
+    # Cast ServerProxy so the rest of the script knows its methods
+    engine_client = cast(EngineRPC, ServerProxy(args.engine, allow_none=True))
+    run(args.audio, args.publish, engine_client, args.decoder)
 
 
 if __name__ == "__main__":
