@@ -107,18 +107,44 @@ recesses that bring the wall back to 2.4 mm in front of each port.
 
 ## Radio + Pi 3 B+ enclosure (`cad/pi_enclosure.py`)
 
-One box, 203 x 119 x 27 mm, holding the radio board and a Raspberry Pi 3 B+
-side by side, joined by a short USB cable inside:
+One box, 230 x 82 x 27 mm, holding the radio board and a Raspberry Pi 3 B+
+side by side, joined by a short straight USB cable inside:
 
-- the radio's SMA leaves through the left wall; the Pi's micro-USB power, HDMI
-  and audio through the back wall, its SD card through the right wall
-- the Pi is turned so its USB/Ethernet edge faces the radio; Ethernet and the
-  other USB ports are inside (use the Pi's WiFi)
-- the radio's USB-C points back into a channel; a 10–15 cm straight USB-C to
-  USB-A cable runs along it and into the Pi's nearer USB port
+- the radio is turned 90 degrees so its USB-C points straight at the Pi; the
+  Pi is turned so its USB/Ethernet edge faces the radio, and a straight USB-C
+  to USB-A cable runs straight across the 70 mm gap between them (a cable
+  longer than ~15 mm between the plugs just bows sideways in the gap)
+- both boards' port edges line up on the back wall: the radio's SMA, then the
+  Pi's micro-USB power, HDMI and audio; the Pi's SD card is in the right wall
+- Ethernet and the other USB ports are inside (use the Pi's WiFi)
+- the antenna's bias-T screws onto the SMA outside and is powered from the
+  Pi: its fixed USB cable comes in through a hole in the back wall over the
+  gap, split between base and lid so the plug never has to pass through (lay
+  the cable in the base before closing), is held by a zip-tie anchor just
+  inside, and plugs into the Pi's back USB stack; the radio uses the front
+  stack. Set `BIAST_CABLE_D` to your cable's diameter
 - 7 x M2.5 x 12 mm screws from below: four through the Pi's mounting holes
-  (clamping the Pi between its standoffs and the lid), three into posts
-- vent slots in the floor and lid over the Pi
+  (clamping the Pi between its standoffs and the lid), three into posts at the
+  front-left and the front and back of the gap; the SMA nut holds the
+  back-left corner
+- vent slots in the floor and lid, centred over the Pi's SoC
+- the radio board (no mounting holes) is clamped at its corners by the lid and
+  stuck down with 4 x 10 mm squares of 1 mm double-sided foam tape on raised
+  platforms (`PAD_T`, `PAD_PTS`); the Pi is screwed, no tape
+
+**Hardware** (also engraved on the base underside):
+
+| Qty | Part | Where |
+|---|---|---|
+| 7 | M2.5 x 12 mm screw (socket or pan head, head <= 5 mm dia; 10-20 mm also fit) | from below: 4 through the Pi's mounting holes into the lid, 3 into the posts; heads sit in 5.5 x 3 mm counterbores, threads cut into 2.2 mm pilot holes in the lid |
+| 4 | 8 mm stick-on rubber feet | 0.6 mm pockets on the underside |
+| 4 | 10 x 10 mm squares of 1 mm double-sided foam tape | platforms under the radio board |
+| 1 | small zip tie (<= 3.6 mm wide) | bias-T cable anchor inside the back wall |
+| 1 | USB-C to USB-A cable, straight plugs | radio to the Pi's front USB stack |
+
+**Bed fit:** at 230 mm it is longer than a 220 x 220 mm bed, and it doesn't fit
+diagonally either (needs ~221 mm). Shorten `CABLE_SLACK` or the plug lengths
+to bring it under 220 mm, or print on a larger bed.
 
 ```sh
 .venv/bin/python cad/pi_enclosure.py out/pi ../radio-project/radio-project.step
@@ -126,10 +152,12 @@ side by side, joined by a short USB cable inside:
 
 It prints fit checks against both boards and the reserved cable space, and
 writes `out/pi/print/pi_{base,lid}.{stl,3mf,step}` (bed-oriented) plus
-`out/pi/pi_enclosure_assembly.step`. The cable room is set by `USB_C_PLUG`,
-`USB_A_PLUG` and `CABLE_BEND` (mm beyond each port): measure your cable's plugs
-and set them, and the box resizes. Pi underside parts (SD card, GPIO pin tails)
-come from the official drawing, since `pi3bplus.step` models only the top.
+`out/pi/pi_enclosure_assembly.step` and, for viewing, `radio_placed.step`,
+`pi3bplus_placed.step` and `cable_keepout.step`. The gap is
+`USB_C_PLUG + CABLE_SLACK + USB_A_PLUG` plus the ports' offsets from the board
+edges: measure your cable's plugs and set them, and the box resizes. Pi
+underside parts (SD card, GPIO pin tails) come from the official drawing,
+since `pi3bplus.step` models only the top.
 
 ## Common tweaks
 
