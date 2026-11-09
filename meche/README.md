@@ -16,24 +16,15 @@ Pi that runs it (GNU Radio, the WebSDR) sit together as a single unit:
 The next revision should be waterproof: a gasket at the base/lid joint, a sealed bulkhead SMA, cable glands instead of
 the open port cut-outs, and a breathable vent membrane (see the TODO in `code/CLAUDE.md`).
 
-## How it's built
+## How it's built: FreeCAD MCP
 
-The enclosure is generated from code with CadQuery, by `cad/pi_enclosure.py` on the `pi-enclosure` branch (not on
-`main` yet). It is driven by `../radio-project/radio-project.step`, exported from KiCad, so re-export it and rebuild when the
-board changes. Run from `meche/` with its own Python 3.12 environment (CadQuery doesn't support 3.14):
+The enclosure is built in FreeCAD through the **FreeCAD MCP** server: Claude Code drives FreeCAD through the MCP to
+load the board models, model the base and lid around them, check the fit, colour the parts, make the lid see-through
+and take screenshots like the one above.
 
-```sh
-.venv/bin/python cad/pi_enclosure.py out/pi ../radio-project/radio-project.step
-```
+The boards come in as STEP files: the radio from `../radio-project/radio-project.step` (exported from KiCad, so
+re-export it when the board changes) and the Pi from `rpi-step/pi3bplus.step`.
 
-Each build prints fit checks (overlaps with both boards, the cable and bias-T routes, whether it fits the print bed).
-Read them before you export. Print files land in `out/pi/print/`. The `README.md` on `pi-enclosure` has the full details:
-hardware list, screws, cable lengths and parameters.
+Drive FreeCAD only through the MCP: `freecadcmd` saves no colours or visibility.
 
 The current build is 230 x 84 x 27 mm, which is still too long for the 220 mm bed.
-
-## FreeCAD MCP
-
-We view and inspect the models in FreeCAD through the **FreeCAD MCP** server, so Claude Code can open the assembly,
-colour the parts, make the lid see-through, check the fit and take screenshots like the one above. Drive FreeCAD only
-through the MCP: `freecadcmd` saves no colours or visibility.
