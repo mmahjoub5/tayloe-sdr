@@ -152,6 +152,18 @@ input[type=range] { width: 200px; accent-color: var(--accent); height: 32px; }
 .presets { display: flex; flex-wrap: wrap; gap: 6px; }
 .presets button { font-size: 13px; }
 
+/* FT8 */
+.ft8 { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 18px; }
+.ft8-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
+.ft8-head h2 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); font-weight: 600; }
+#ft8-clear { margin-left: auto; padding: 3px 10px; font-size: 12px; }
+.ft8-table { max-height: 280px; overflow: auto; }
+.ft8 table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+.ft8 th { position: sticky; top: 0; background: var(--panel); color: var(--dim); font-weight: 400; text-align: left; padding: 2px 12px 4px 0; white-space: nowrap; }
+.ft8 td { padding: 2px 12px 2px 0; border-top: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ft8 th:last-child, .ft8 td:last-child { width: 100%; }
+.ft8 tr.cq td:last-child { color: var(--ok); }
+
 .readout.locked .d { cursor: default; }
 .readout.locked .d:hover { background: none; }
 
