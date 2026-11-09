@@ -1,5 +1,7 @@
 # radio
 
+The only git remote is `upstream` (github.com/mmahjoub5/tayloe-sdr); there is no `origin`. Push with `git push upstream <branch>`.
+
 ## radiolib board (`code/radiolib/radiolib/board.py`)
 
 `RadioBoard` talks to the receiver board's serial CLI (firmware in `code/radio_cli/`) on a Seeed XIAO RP2040.
@@ -55,3 +57,19 @@ It resamples to `FS` (12 kHz) and decodes 30 s windows every 15 s, so the record
 ## FT8 RX, live (`code/gnu-radio/ft8_decoder_block.py`)
 
 Code for an Embedded Python Block in `board/ft8_receiver.grc`; paste the file into the block. It sits inline on the real float SSB audio (DC Blocker -> block -> resampler) at `samp_rate` (24 kHz) and passes the audio through unchanged, with parameters `samp_rate` and `dial_hz`. At each UTC 15 s boundary it decodes the last 30 s in a background thread, so `work()` and the Qt GUI sinks never stall, and prints `FT8 <UTC> <audio Hz> <RF Hz> sync <score> <payload hex>` to the console. There is no message port. If a decode is still running at the next boundary, that boundary is skipped. Messages already reported (same payload within 1 s) aren't repeated. Like `gr_tuner_block.py`, it lives in `gnu-radio/` and imports radiolib, never the reverse.
+
+## Enclosure CAD (`meche/`)
+
+CadQuery scripts, not on `main` yet: `cad/enclosure.py` (radio only) is on `magnetic-lid`, `cad/pi_enclosure.py`
+(radio + Pi 3 B+) on `pi-enclosure`. `meche/README.md` on those branches has the details.
+
+- Run from `meche/` with its own Python 3.12 environment, git-ignored (CadQuery doesn't support 3.14):
+  `.venv/bin/python cad/pi_enclosure.py out/pi ../radio-project/radio-project.step`. Each build prints its own fit checks
+  (overlaps with both boards, the cable route and the bias-T route, whether it fits the print bed); read them before you export.
+- Drive FreeCAD only through the FreeCAD MCP (`freecad-mcp` skill). `freecadcmd` saves no colours or visibility.
+- `radio-project.step`: the rotary encoder is not fitted (it shows as an overlap with the lid; ignore it), and there is a
+  second full-size board solid, so don't take "largest solid" to be the PCB. The SMA is hand-soldered and can sit up
+  to 2 mm proud of the board edge (`SMA_PROUD`).
+- `rpi-step/pi3bplus.step` is Y-up, centred on X, and has nothing under the board. The SD card and GPIO pin tails come
+  from the official drawing.
+- The print bed is 220 x 220 mm. Every enclosure must fit it.
